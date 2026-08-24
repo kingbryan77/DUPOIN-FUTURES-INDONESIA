@@ -1,0 +1,8 @@
+{
+  "name": "Dupoin Pro Broker",
+  "description": "Professional Dupoin broker trading platform integrated with Supabase Cloud for real-time authentication and database persistence. Features include member area, admin panel, and live balance synchronization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
