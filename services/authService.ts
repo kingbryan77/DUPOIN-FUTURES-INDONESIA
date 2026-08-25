@@ -13,6 +13,9 @@ const mapProfileToUser = (profile: any, authUser: any): User => {
     balance: (profile?.balance !== undefined && profile?.balance !== null) ? Number(profile.balance) : 8000000,
     notifications: [], 
     profilePictureUrl: profile.profile_picture_url,
+    bankName: profile.bank_name || '',
+    bankAccountNumber: profile.bank_account_number || '',
+    bankAccountHolder: profile.bank_account_holder || profile.full_name || '',
   };
 };
 
@@ -74,7 +77,10 @@ const createDemoUser = (email: string, fullName = 'Pro Trader'): User => ({
   notifications: [
     { id: '1', message: 'Selamat datang di Dupoin Pro Trader!', date: new Date().toISOString(), read: false }
   ],
-  profilePictureUrl: undefined
+  profilePictureUrl: undefined,
+  bankName: 'Bank Central Asia (BCA)',
+  bankAccountNumber: '8735129481',
+  bankAccountHolder: fullName || 'Pro Trader'
 });
 
 export const login = async (identifier: string, passwordAttempt: string): Promise<{ user: User | null; error: string | null }> => {
@@ -214,11 +220,41 @@ export const getAllUsers = async (): Promise<User[]> => {
 export const updateUserInfo = async (updatedData: Partial<User>): Promise<void> => {
   if (!updatedData.id) return;
   const updates: any = {};
-  if (updatedData.fullName) updates.full_name = updatedData.fullName;
-  if (updatedData.phoneNumber) updates.phone_number = updatedData.phoneNumber;
-  if (updatedData.profilePictureUrl) updates.profile_picture_url = updatedData.profilePictureUrl;
+  if (updatedData.fullName !== undefined) updates.full_name = updatedData.fullName;
+  if (updatedData.phoneNumber !== undefined) updates.phone_number = updatedData.phoneNumber;
+  if (updatedData.profilePictureUrl !== undefined) updates.profile_picture_url = updatedData.profilePictureUrl;
   if (updatedData.isVerified !== undefined) updates.is_verified = updatedData.isVerified;
-  await supabase.from('profiles').update(updates).eq('id', updatedData.id);
+  if (updatedData.bankName !== undefined) updates.bank_name = updatedData.bankName;
+  if (updatedData.bankAccountNumber !== undefined) updates.bank_account_number = updatedData.bankAccountNumber;
+  if (updatedData.bankAccountHolder !== undefined) updates.bank_account_holder = updatedData.bankAccountHolder;
+  
+  // Update local storage if present
+  const localUserJson = localStorage.getItem(DEMO_USER_KEY);
+  if (localUserJson) {
+    try {
+      const localUser = JSON.parse(localUserJson);
+      if (localUser && localUser.id === updatedData.id) {
+        const merged = {
+          ...localUser,
+          ...(updatedData.fullName !== undefined ? { fullName: updatedData.fullName } : {}),
+          ...(updatedData.phoneNumber !== undefined ? { phoneNumber: updatedData.phoneNumber } : {}),
+          ...(updatedData.profilePictureUrl !== undefined ? { profilePictureUrl: updatedData.profilePictureUrl } : {}),
+          ...(updatedData.bankName !== undefined ? { bankName: updatedData.bankName } : {}),
+          ...(updatedData.bankAccountNumber !== undefined ? { bankAccountNumber: updatedData.bankAccountNumber } : {}),
+          ...(updatedData.bankAccountHolder !== undefined ? { bankAccountHolder: updatedData.bankAccountHolder } : {}),
+        };
+        localStorage.setItem(DEMO_USER_KEY, JSON.stringify(merged));
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  try {
+    await supabase.from('profiles').update(updates).eq('id', updatedData.id);
+  } catch (err) {
+    console.warn("Supabase profile update warning:", err);
+  }
 };
 
 export const adminCreateUser = async (userData: Omit<User, 'id' | 'username' | 'notifications'> & { password: string }): Promise<User | null> => {

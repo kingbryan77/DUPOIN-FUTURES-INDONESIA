@@ -17,12 +17,18 @@ export interface User {
   balance: number;
   notifications: NotificationItem[];
   profilePictureUrl?: string;
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankAccountHolder?: string;
 }
 
 export interface UserProfileUpdate {
   fullName?: string;
   phoneNumber?: string;
   profilePictureUrl?: string;
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankAccountHolder?: string;
 }
 
 export enum TransactionType {

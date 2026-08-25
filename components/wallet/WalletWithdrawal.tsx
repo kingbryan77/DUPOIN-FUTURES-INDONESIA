@@ -1,36 +1,67 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTransactions } from '../../context/TransactionContext';
 import { E_WALLET_OPTIONS, BANK_OPTIONS } from '../../constants';
 import { TransactionStatus } from '../../types';
-import Button from '../common/Button';
 import WalletLayout from './WalletLayout';
-import { InformationCircleIcon } from '@heroicons/react/24/solid';
+import { 
+  InformationCircleIcon, 
+  CheckBadgeIcon, 
+  BuildingLibraryIcon,
+  Cog6ToothIcon 
+} from '@heroicons/react/24/solid';
 
 const WalletWithdrawal: React.FC = () => {
   const { user } = useAuth();
   const { balance, withdraw, isLoadingTransactions, withdrawalHistory, accountMode } = useTransactions();
   const [amount, setAmount] = useState<string>('');
   const [method, setMethod] = useState<'bank' | 'e-wallet'>('bank');
-  const [bankOrEwalletName, setBankOrEwalletName] = useState('');
-  const [accountNumber, setAccountNumber] = useState('');
-  const [accountHolderName, setAccountHolderName] = useState('');
+  const [bankOrEwalletName, setBankOrEwalletName] = useState(user?.bankName || '');
+  const [accountNumber, setAccountNumber] = useState(user?.bankAccountNumber || '');
+  const [accountHolderName, setAccountHolderName] = useState(user?.bankAccountHolder || user?.fullName || '');
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   const isLowBalance = balance <= 0;
+
+  // Auto-fill account details from user profile when user loads or updates
+  useEffect(() => {
+    if (user) {
+      if (user.bankName) setBankOrEwalletName(user.bankName);
+      if (user.bankAccountNumber) setAccountNumber(user.bankAccountNumber);
+      if (user.bankAccountHolder || user.fullName) {
+        setAccountHolderName(user.bankAccountHolder || user.fullName);
+      }
+    }
+  }, [user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
     
     if (accountMode === 'demo') {
-         setMessage({ type: 'error', text: 'Demo mode active.' });
+         setMessage({ type: 'error', text: 'Mode demo aktif. Harap beralih ke akun Real untuk melakukan penarikan dana.' });
          return;
     }
 
     const numAmount = parseFloat(amount.replace(/\D/g, ''));
     if (isNaN(numAmount) || numAmount <= 0) {
-        setMessage({ type: 'error', text: 'Invalid amount.' });
+        setMessage({ type: 'error', text: 'Nominal penarikan tidak valid.' });
+        return;
+    }
+
+    if (!bankOrEwalletName.trim()) {
+        setMessage({ type: 'error', text: 'Silakan pilih Bank atau E-Wallet tujuan penarikan.' });
+        return;
+    }
+
+    if (!accountNumber.trim()) {
+        setMessage({ type: 'error', text: 'Nomor rekening tujuan tidak boleh kosong.' });
+        return;
+    }
+
+    if (!accountHolderName.trim()) {
+        setMessage({ type: 'error', text: 'Nama pemilik rekening tidak boleh kosong.' });
         return;
     }
 
@@ -38,13 +69,14 @@ const WalletWithdrawal: React.FC = () => {
     const success = await withdraw(numAmount, fullMethodName, bankOrEwalletName, accountNumber, accountHolderName);
 
     if (success) {
-      setMessage({ type: 'success', text: 'Withdrawal submitted.' });
+      setMessage({ type: 'success', text: 'Permintaan penarikan dana berhasil dikirimkan.' });
       setAmount('');
-      setAccountNumber('');
     } else {
-      setMessage({ type: 'error', text: 'Withdrawal failed. Check balance.' });
+      setMessage({ type: 'error', text: 'Penarikan gagal. Saldo tidak mencukupi atau terjadi kesalahan.' });
     }
   };
+
+  const hasRegisteredBank = Boolean(user?.bankName && user?.bankAccountNumber);
 
   return (
     <WalletLayout>
@@ -52,8 +84,41 @@ const WalletWithdrawal: React.FC = () => {
            {/* Left Column: Withdrawal Form */}
            <div className="lg:col-span-1">
                <div className="bg-white border border-[#E2E8F0] rounded-2xl shadow-sm overflow-hidden p-6 sm:p-7">
-                   <h2 className="text-2xl font-bold text-[#1E293B] mb-6">Withdrawal</h2>
+                   <div className="flex items-center justify-between mb-4">
+                     <h2 className="text-2xl font-bold text-[#1E293B]">Withdrawal</h2>
+                     <Link 
+                       to="/setting" 
+                       className="text-xs text-[#00AEEF] hover:text-[#009cd7] font-semibold flex items-center space-x-1"
+                       title="Ubah rekening default di Pengaturan"
+                     >
+                       <Cog6ToothIcon className="w-3.5 h-3.5" />
+                       <span>Edit Rekening</span>
+                     </Link>
+                   </div>
                    
+                   {/* Registered Bank Status Badge */}
+                   {hasRegisteredBank ? (
+                     <div className="bg-[#EFF6FF] border border-[#BFDBFE] p-3.5 rounded-xl text-xs text-[#1E40AF] mb-5 flex items-start space-x-2.5">
+                        <CheckBadgeIcon className="w-4 h-4 text-[#2563EB] flex-shrink-0 mt-0.5" />
+                        <div className="flex-1">
+                          <span className="font-bold block text-[#1E3A8A]">Rekening Terdaftar Otomatis Terisi</span>
+                          <p className="text-[#3B82F6] font-sans">
+                            {user?.bankName} &bull; {user?.bankAccountNumber} a.n {user?.bankAccountHolder || user?.fullName}
+                          </p>
+                        </div>
+                     </div>
+                   ) : (
+                     <div className="bg-[#FFFBEB] border border-[#FDE68A] p-3 rounded-xl text-xs text-[#92400E] mb-5 flex items-start justify-between">
+                        <div className="flex items-start space-x-2">
+                          <BuildingLibraryIcon className="w-4 h-4 text-[#D97706] flex-shrink-0 mt-0.5" />
+                          <span>Simpan nomor rekening di <strong>Pengaturan</strong> agar otomatis muncul setiap saat.</span>
+                        </div>
+                        <Link to="/setting" className="text-[#00AEEF] hover:underline font-bold ml-2 whitespace-nowrap">
+                          Atur
+                        </Link>
+                     </div>
+                   )}
+
                    {/* Green Status / Processing Alert Banner */}
                    <div className="bg-[#00D09C] text-white p-4 rounded-xl text-xs sm:text-sm font-medium mb-6 shadow-sm leading-relaxed">
                        Withdrawal IDR Balance no E42I9NR341RN has been successfully, please wait we will process your withdrawal.
@@ -83,36 +148,47 @@ const WalletWithdrawal: React.FC = () => {
 
                        {/* Withdrawal To */}
                        <div>
-                           <label className="block text-[#64748B] text-xs sm:text-sm font-medium mb-1.5">Withdrawal To</label>
+                           <div className="flex items-center justify-between mb-1.5">
+                             <label className="block text-[#64748B] text-xs sm:text-sm font-medium">Withdrawal To (Bank / E-Wallet)</label>
+                             <span className="text-[10px] text-[#00AEEF] font-bold uppercase tracking-wider">Otomatis Terisi</span>
+                           </div>
                            <select 
-                                className="w-full bg-white border border-[#CBD5E1] rounded-lg px-4 py-2.5 text-[#334155] text-sm outline-none focus:border-[#00AEEF]"
+                                className="w-full bg-white border border-[#CBD5E1] rounded-lg px-4 py-2.5 text-[#334155] text-sm outline-none focus:border-[#00AEEF] cursor-pointer"
                                 value={bankOrEwalletName}
                                 onChange={(e) => setBankOrEwalletName(e.target.value)}
                            >
-                               <option value="">Select Bank / E-Wallet</option>
-                               <optgroup label="Banks">
+                               <option value="">Pilih Bank / E-Wallet Tujuan</option>
+                               <optgroup label="Daftar Bank">
                                    {BANK_OPTIONS.map(b => <option key={b} value={b}>{b}</option>)}
                                </optgroup>
-                               <optgroup label="E-Wallets">
+                               <optgroup label="Daftar E-Wallet">
                                     {E_WALLET_OPTIONS.map(e => <option key={e} value={e}>{e}</option>)}
                                </optgroup>
                            </select>
                            
-                           {/* Extra inputs for account details */}
-                           <input 
-                                type="text"
-                                placeholder="Account Number"
-                                className="w-full bg-white border border-[#CBD5E1] rounded-lg px-4 py-2.5 text-[#1E293B] text-sm outline-none focus:border-[#00AEEF] mt-2.5 font-sans tabular-nums"
-                                value={accountNumber}
-                                onChange={e => setAccountNumber(e.target.value)}
-                           />
-                           <input 
-                                type="text"
-                                placeholder="Account Holder Name"
-                                className="w-full bg-white border border-[#CBD5E1] rounded-lg px-4 py-2.5 text-[#1E293B] text-sm outline-none focus:border-[#00AEEF] mt-2.5"
-                                value={accountHolderName}
-                                onChange={e => setAccountHolderName(e.target.value)}
-                           />
+                           {/* Nomor Rekening */}
+                           <div className="mt-2.5">
+                             <label className="block text-[#64748B] text-[11px] font-semibold mb-1">Nomor Rekening</label>
+                             <input 
+                                  type="text"
+                                  placeholder="Nomor Rekening Tujuan"
+                                  className="w-full bg-white border border-[#CBD5E1] rounded-lg px-4 py-2.5 text-[#1E293B] text-sm outline-none focus:border-[#00AEEF] font-sans tabular-nums"
+                                  value={accountNumber}
+                                  onChange={e => setAccountNumber(e.target.value)}
+                             />
+                           </div>
+
+                           {/* Nama Pemilik Rekening */}
+                           <div className="mt-2.5">
+                             <label className="block text-[#64748B] text-[11px] font-semibold mb-1">Nama Pemilik Rekening</label>
+                             <input 
+                                  type="text"
+                                  placeholder="Nama Lengkap Pemilik Rekening"
+                                  className="w-full bg-white border border-[#CBD5E1] rounded-lg px-4 py-2.5 text-[#1E293B] text-sm outline-none focus:border-[#00AEEF]"
+                                  value={accountHolderName}
+                                  onChange={e => setAccountHolderName(e.target.value)}
+                             />
+                           </div>
                        </div>
 
                        {/* Amount */}
@@ -122,7 +198,7 @@ const WalletWithdrawal: React.FC = () => {
                                <div className="bg-white text-[#64748B] text-sm font-medium px-4 py-2.5 border border-[#CBD5E1] rounded-l-lg flex items-center justify-center">IDR</div>
                                <input 
                                     type="text"
-                                    placeholder="Amount Withdrawal"
+                                    placeholder="Nominal Penarikan"
                                     className="flex-1 bg-white border border-[#CBD5E1] border-l-0 rounded-r-lg px-4 py-2.5 text-[#1E293B] text-sm outline-none focus:border-[#00AEEF] font-sans tabular-nums"
                                     value={amount}
                                     onChange={(e) => setAmount(e.target.value)}
@@ -131,7 +207,7 @@ const WalletWithdrawal: React.FC = () => {
                        </div>
 
                        <div className="pt-2">
-                           <button type="submit" disabled={isLoadingTransactions} className="bg-[#00AEEF] hover:bg-[#009cd7] text-white font-bold py-2.5 px-6 rounded-lg text-sm transition-all shadow-md shadow-[#00AEEF]/20">
+                           <button type="submit" disabled={isLoadingTransactions} className="w-full sm:w-auto bg-[#00AEEF] hover:bg-[#009cd7] text-white font-bold py-2.5 px-6 rounded-lg text-sm transition-all shadow-md shadow-[#00AEEF]/20 active:scale-95">
                                {isLoadingTransactions ? 'Processing...' : 'Submit'}
                            </button>
                        </div>
@@ -148,7 +224,7 @@ const WalletWithdrawal: React.FC = () => {
                        </div>
                        
                        {message && (
-                           <div className={`p-3 rounded-xl text-xs font-semibold ${message.type === 'success' ? 'bg-success/20 text-success' : 'bg-danger/20 text-danger'}`}>
+                           <div className={`p-3.5 rounded-xl text-xs font-semibold ${message.type === 'success' ? 'bg-success/20 text-success border border-success/30' : 'bg-danger/20 text-danger border border-danger/30'}`}>
                                {message.text}
                            </div>
                        )}
