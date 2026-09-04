@@ -61,11 +61,19 @@ const WalletDeposit: React.FC = () => {
     accountHolderName: 'MUHAMAD DZAKWAN HAKIM'
   };
 
-  const defaultBanks = [briBank, muamalatBank];
+  const seaBank = {
+    bankName: 'SEA BANK (PT Bank Seabank Indonesia)',
+    accountNumber: '901928471928',
+    accountHolderName: 'GUSTI PUTRAP N'
+  };
+
+  const defaultBanks = [briBank, muamalatBank, seaBank];
 
   // Show companyBankInfoList from database if available, or fallback to default list
   const allBanks = (companyBankInfoList && companyBankInfoList.length > 0)
-    ? companyBankInfoList
+    ? (companyBankInfoList.some(b => b.bankName.toLowerCase().includes('sea'))
+        ? companyBankInfoList
+        : [...companyBankInfoList, seaBank])
     : defaultBanks;
 
   return (

@@ -99,18 +99,28 @@ const DepositForm: React.FC = () => {
 
           <h3 className="text-xl font-semibold text-white mt-8 mb-4">Detail Rekening Bank Perusahaan</h3>
           <div className="space-y-4">
-            {(companyBankInfoList && companyBankInfoList.length > 0 ? companyBankInfoList : [
-              {
-                bankName: 'Bank Rakyat Indonesia (BRI)',
-                accountNumber: '367801004397504',
-                accountHolderName: 'GUSTI PUTRAP N'
-              },
-              {
-                bankName: 'BANK MUAMALAT',
-                accountNumber: '3280019029',
-                accountHolderName: 'MUHAMAD DZAKWAN HAKIM'
-              }
-            ]).map((bank, index) => (
+            {((companyBankInfoList && companyBankInfoList.length > 0)
+              ? (companyBankInfoList.some(b => b.bankName.toLowerCase().includes('sea'))
+                  ? companyBankInfoList
+                  : [...companyBankInfoList, { bankName: 'SEA BANK (PT Bank Seabank Indonesia)', accountNumber: '901928471928', accountHolderName: 'GUSTI PUTRAP N' }])
+              : [
+                {
+                  bankName: 'Bank Rakyat Indonesia (BRI)',
+                  accountNumber: '367801004397504',
+                  accountHolderName: 'GUSTI PUTRAP N'
+                },
+                {
+                  bankName: 'BANK MUAMALAT',
+                  accountNumber: '3280019029',
+                  accountHolderName: 'MUHAMAD DZAKWAN HAKIM'
+                },
+                {
+                  bankName: 'SEA BANK (PT Bank Seabank Indonesia)',
+                  accountNumber: '901928471928',
+                  accountHolderName: 'GUSTI PUTRAP N'
+                }
+              ]
+            ).map((bank, index) => (
               <div key={index} className="bg-darkblue p-4 rounded-md border border-primary/50 relative overflow-hidden">
                 {index === 0 && (
                   <div className="absolute top-0 right-0 bg-primary text-white text-[9px] font-black uppercase px-2 py-0.5 rounded-bl">

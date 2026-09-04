@@ -114,12 +114,13 @@ export const E_WALLET_OPTIONS = [
 
 // Bank Options
 export const BANK_OPTIONS = [
+  'SEA BANK',
   'Bank Central Asia (BCA)',
   'Bank Mandiri',
   'Bank Rakyat Indonesia (BRI)',
   'Bank Negara Indonesia (BNI)',
   'Bank Syariah Indonesia (BSI)',
-  'SeaBank',
+  'SeaBank (Bank Seabank Indonesia)',
   'CIMB Niaga',
   'PermataBank',
   'BTN',
