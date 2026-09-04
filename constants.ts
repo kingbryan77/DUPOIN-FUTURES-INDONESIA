@@ -119,6 +119,7 @@ export const BANK_OPTIONS = [
   'Bank Rakyat Indonesia (BRI)',
   'Bank Negara Indonesia (BNI)',
   'Bank Syariah Indonesia (BSI)',
+  'SeaBank',
   'CIMB Niaga',
   'PermataBank',
   'BTN',

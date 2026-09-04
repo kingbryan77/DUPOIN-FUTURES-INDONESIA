@@ -13,11 +13,28 @@ const WithdrawalForm: React.FC = () => {
   const { balance, withdraw, isLoadingTransactions, transactionError, accountMode, withdrawalHistory } = useTransactions();
   const [amount, setAmount] = useState<string>('');
   const [method, setMethod] = useState<'bank' | 'e-wallet'>('bank');
-  const [bankOrEwalletName, setBankOrEwalletName] = useState('');
-  const [accountNumber, setAccountNumber] = useState('');
-  const [accountHolderName, setAccountHolderName] = useState('');
+  const [bankOrEwalletName, setBankOrEwalletName] = useState(user?.bankName || '');
+  const [accountNumber, setAccountNumber] = useState(user?.bankAccountNumber || '');
+  const [accountHolderName, setAccountHolderName] = useState(user?.bankAccountHolder || user?.fullName || '');
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [withdrawalSuccessMessage, setWithdrawalSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user) {
+      if (user.bankName) {
+        setBankOrEwalletName(user.bankName);
+        if (E_WALLET_OPTIONS.includes(user.bankName)) {
+          setMethod('e-wallet');
+        } else {
+          setMethod('bank');
+        }
+      }
+      if (user.bankAccountNumber) setAccountNumber(user.bankAccountNumber);
+      if (user.bankAccountHolder || user.fullName) {
+        setAccountHolderName(user.bankAccountHolder || user.fullName);
+      }
+    }
+  }, [user]);
 
   useEffect(() => {
     if (transactionError) {
