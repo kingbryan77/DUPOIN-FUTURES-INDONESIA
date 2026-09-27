@@ -25,6 +25,7 @@ const AdminPanel: React.FC = () => {
   const {
     getAllUsers,
     updateUserVerification,
+    updateUserActiveStatus,
     getAllTransactions,
     updateDepositStatus,
     updateWithdrawalStatus,
@@ -41,6 +42,7 @@ const AdminPanel: React.FC = () => {
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
   const [trxSearch, setTrxSearch] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [userActionMessage, setUserActionMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   // Balance Modal State
   const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
@@ -57,7 +59,8 @@ const AdminPanel: React.FC = () => {
     password: '',
     balance: '8000000',
     isAdmin: false,
-    isVerified: true
+    isVerified: true,
+    isActive: true,
   });
   const [createError, setCreateError] = useState<string | null>(null);
   const [createLoading, setCreateLoading] = useState(false);
@@ -109,6 +112,24 @@ const AdminPanel: React.FC = () => {
     );
   }
 
+  const handleToggleUserActive = async (u: User, newActiveState: boolean) => {
+    try {
+      await updateUserActiveStatus(u.id, newActiveState);
+      setUserActionMessage({
+        text: `Akun "${u.fullName}" berhasil ${newActiveState ? 'diaktifkan kembali' : 'dinonaktifkan'}. ${!newActiveState ? 'User tidak dapat melakukan penarikan dana.' : 'User sekarang dapat melakukan penarikan dana.'}`,
+        type: 'success'
+      });
+      setTimeout(() => setUserActionMessage(null), 5000);
+      await loadData();
+    } catch (err) {
+      setUserActionMessage({
+        text: `Gagal mengubah status akun "${u.fullName}".`,
+        type: 'error'
+      });
+      setTimeout(() => setUserActionMessage(null), 5000);
+    }
+  };
+
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateError(null);
@@ -128,7 +149,8 @@ const AdminPanel: React.FC = () => {
             password: createData.password,
             balance: parseFloat(createData.balance) || 0,
             isAdmin: createData.isAdmin,
-            isVerified: createData.isVerified
+            isVerified: createData.isVerified,
+            isActive: createData.isActive
         });
 
         if (success) {
@@ -140,8 +162,14 @@ const AdminPanel: React.FC = () => {
                 password: '',
                 balance: '8000000',
                 isAdmin: false,
-                isVerified: true
+                isVerified: true,
+                isActive: true
             });
+            setUserActionMessage({
+                text: `User baru berhasil dibuat. Status Akun: ${createData.isActive ? 'Aktif' : 'Nonaktif'}.`,
+                type: 'success'
+            });
+            setTimeout(() => setUserActionMessage(null), 4000);
             // Re-load users after successful creation
             await loadData();
         } else {
@@ -272,8 +300,34 @@ const AdminPanel: React.FC = () => {
 
         {activeTab === 'users' && (
           <div>
-            <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-semibold">Registered Profiles ({users.length})</h3>
+            {userActionMessage && (
+              <div className={`p-4 rounded-xl mb-5 text-sm font-semibold flex items-center justify-between animate-fade-in ${
+                userActionMessage.type === 'success' 
+                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' 
+                  : 'bg-red-500/15 text-red-400 border border-red-500/30'
+              }`}>
+                <span>{userActionMessage.text}</span>
+                <button onClick={() => setUserActionMessage(null)} className="text-gray-400 hover:text-white ml-3">
+                  <XMarkIcon className="w-5 h-5" />
+                </button>
+              </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                <div>
+                  <h3 className="text-xl font-semibold">Registered Profiles ({users.length})</h3>
+                  <div className="flex items-center space-x-3 text-xs mt-1 text-gray-400">
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                      {users.filter(u => u.isActive !== false).length} Aktif
+                    </span>
+                    <span>&bull;</span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-red-400"></span>
+                      {users.filter(u => u.isActive === false).length} Nonaktif
+                    </span>
+                  </div>
+                </div>
                 <Button variant="primary" size="sm" onClick={() => setIsCreateModalOpen(true)}>
                     <UserPlusIcon className="w-4 h-4 mr-2" />
                     Create New User
@@ -287,7 +341,7 @@ const AdminPanel: React.FC = () => {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Name</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Email</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Balance</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Verified</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status Akun</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Admin</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider text-right">Actions</th>
                   </tr>
@@ -300,9 +354,17 @@ const AdminPanel: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-gray-300">{u.email}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-xs sm:text-sm text-white font-sans tabular-nums">Rp {u.balance.toLocaleString('en-US')}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-xs sm:text-sm">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${u.isVerified ? 'bg-success/20 text-success' : 'bg-danger/20 text-danger'}`}>
-                          {u.isVerified ? 'Yes' : 'No'}
-                        </span>
+                        {u.isActive !== false ? (
+                          <span className="px-2.5 py-1 inline-flex items-center gap-1.5 text-xs font-semibold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                            Aktif
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 inline-flex items-center gap-1.5 text-xs font-semibold rounded-full bg-red-500/20 text-red-400 border border-red-500/30">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span>
+                            Nonaktif
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-xs sm:text-sm">
                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${u.isAdmin ? 'bg-primary/20 text-primary' : 'bg-gray-700 text-gray-400'}`}>
@@ -310,7 +372,7 @@ const AdminPanel: React.FC = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-xs sm:text-sm font-medium">
-                        <div className="flex space-x-2 justify-end">
+                        <div className="flex space-x-2 justify-end items-center">
                             <Button
                                 variant="secondary"
                                 size="sm"
@@ -319,16 +381,26 @@ const AdminPanel: React.FC = () => {
                             >
                                 Edit Balance
                             </Button>
-                            <Button
-                                variant={u.isVerified ? 'danger' : 'primary'}
-                                size="sm"
-                                onClick={async () => {
-                                    await updateUserVerification(u.id, !u.isVerified);
-                                    await loadData();
-                                }}
-                            >
-                                {u.isVerified ? 'Deactivate' : 'Activate'}
-                            </Button>
+                            {u.isActive !== false ? (
+                              <Button
+                                  variant="danger"
+                                  size="sm"
+                                  onClick={() => handleToggleUserActive(u, false)}
+                                  className="bg-red-500/10 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/30 text-xs px-3 py-1.5 font-medium transition-all"
+                                  title="Nonaktifkan akun user (User tidak akan bisa melakukan penarikan dana)"
+                              >
+                                  Nonaktifkan
+                              </Button>
+                            ) : (
+                              <Button
+                                  size="sm"
+                                  onClick={() => handleToggleUserActive(u, true)}
+                                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs px-3 py-1.5 shadow-sm transition-all"
+                                  title="Aktifkan kembali akun user"
+                              >
+                                  Aktifkan
+                              </Button>
+                            )}
                         </div>
                       </td>
                     </tr>
@@ -574,6 +646,17 @@ const AdminPanel: React.FC = () => {
                                 className="w-5 h-5 bg-darkblue border-gray-700 rounded text-primary focus:ring-0"
                             />
                             <span className="text-sm text-gray-300 group-hover:text-white transition-colors">Make Administrator</span>
+                        </label>
+                        <label className="flex items-center space-x-3 cursor-pointer group">
+                            <input 
+                                type="checkbox"
+                                checked={createData.isActive}
+                                onChange={(e) => setCreateData({...createData, isActive: e.target.checked})}
+                                className="w-5 h-5 bg-darkblue border-gray-700 rounded text-emerald-500 focus:ring-0"
+                            />
+                            <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+                              Status Akun: Aktif (User dapat melakukan penarikan & transaksi)
+                            </span>
                         </label>
                         <label className="flex items-center space-x-3 cursor-pointer group">
                             <input 

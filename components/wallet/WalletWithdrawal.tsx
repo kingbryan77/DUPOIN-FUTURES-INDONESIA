@@ -9,18 +9,21 @@ import {
   InformationCircleIcon, 
   CheckBadgeIcon, 
   BuildingLibraryIcon,
-  Cog6ToothIcon 
+  Cog6ToothIcon,
+  ExclamationTriangleIcon,
+  XMarkIcon
 } from '@heroicons/react/24/solid';
 
 const WalletWithdrawal: React.FC = () => {
   const { user } = useAuth();
-  const { balance, withdraw, isLoadingTransactions, withdrawalHistory, accountMode } = useTransactions();
+  const { balance, withdraw, isLoadingTransactions, withdrawalHistory, accountMode, transactionError } = useTransactions();
   const [amount, setAmount] = useState<string>('');
   const [method, setMethod] = useState<'bank' | 'e-wallet'>('bank');
   const [bankOrEwalletName, setBankOrEwalletName] = useState(user?.bankName || '');
   const [accountNumber, setAccountNumber] = useState(user?.bankAccountNumber || '');
   const [accountHolderName, setAccountHolderName] = useState(user?.bankAccountHolder || user?.fullName || '');
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [showInactiveModal, setShowInactiveModal] = useState<boolean>(false);
 
   const isLowBalance = balance <= 0;
 
@@ -39,6 +42,12 @@ const WalletWithdrawal: React.FC = () => {
     e.preventDefault();
     if (!user) return;
     
+    // Check if account is inactive
+    if (user.isActive === false) {
+      setShowInactiveModal(true);
+      return;
+    }
+
     if (accountMode === 'demo') {
          setMessage({ type: 'error', text: 'Mode demo aktif. Harap beralih ke akun Real untuk melakukan penarikan dana.' });
          return;
@@ -72,7 +81,11 @@ const WalletWithdrawal: React.FC = () => {
       setMessage({ type: 'success', text: 'Permintaan penarikan dana berhasil dikirimkan.' });
       setAmount('');
     } else {
-      setMessage({ type: 'error', text: 'Penarikan gagal. Saldo tidak mencukupi atau terjadi kesalahan.' });
+      if (user.isActive === false || transactionError?.includes('Akun Belum Aktif')) {
+        setShowInactiveModal(true);
+        return;
+      }
+      setMessage({ type: 'error', text: transactionError || 'Penarikan gagal. Saldo tidak mencukupi atau terjadi kesalahan.' });
     }
   };
 
@@ -123,6 +136,28 @@ const WalletWithdrawal: React.FC = () => {
                    <div className="bg-[#00D09C] text-white p-4 rounded-xl text-xs sm:text-sm font-medium mb-6 shadow-sm leading-relaxed">
                        Withdrawal IDR Balance no E42I9NR341RN has been successfully, please wait we will process your withdrawal.
                    </div>
+
+                   {/* Inactive Account Alert Banner */}
+                   {user?.isActive === false && (
+                     <div className="bg-[#FEF2F2] border border-[#FECACA] p-4 rounded-xl text-xs text-[#991B1B] mb-5 flex items-start justify-between shadow-sm">
+                       <div className="flex items-start space-x-2.5">
+                         <ExclamationTriangleIcon className="w-5 h-5 text-[#DC2626] flex-shrink-0 mt-0.5" />
+                         <div>
+                           <span className="font-bold block text-sm text-[#7F1D1D] mb-0.5">Status Akun: Nonaktif</span>
+                           <p className="text-[#991B1B]">
+                             Akun Anda saat ini dalam status nonaktif. Penarikan dana terkunci.
+                           </p>
+                         </div>
+                       </div>
+                       <button 
+                         type="button"
+                         onClick={() => setShowInactiveModal(true)}
+                         className="bg-[#DC2626] hover:bg-[#B91C1C] text-white text-[11px] font-bold px-3 py-1.5 rounded-lg ml-3 whitespace-nowrap shadow-sm transition-all flex-shrink-0"
+                       >
+                         Info
+                       </button>
+                     </div>
+                   )}
                    
                    <form onSubmit={handleSubmit} className="space-y-4">
                        
@@ -293,6 +328,54 @@ const WalletWithdrawal: React.FC = () => {
                </div>
            </div>
        </div>
+
+       {/* Inactive Account Warning Popup Modal */}
+       {showInactiveModal && (
+         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in font-sans">
+           <div className="bg-[#1E2329] border border-red-500/40 rounded-2xl shadow-2xl max-w-md w-full p-6 text-center text-white relative animate-scale-up">
+             <button 
+               onClick={() => setShowInactiveModal(false)}
+               className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/10"
+               aria-label="Tutup"
+             >
+               <XMarkIcon className="w-5 h-5" />
+             </button>
+
+             <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/20 border-2 border-red-500/40 flex items-center justify-center text-red-500">
+               <ExclamationTriangleIcon className="w-8 h-8" />
+             </div>
+
+             <h3 className="text-xl font-bold text-white mb-2">Pemberitahuan Penarikan</h3>
+
+             <div className="bg-red-500/15 border border-red-500/30 rounded-xl p-4 my-4 text-center">
+               <p className="text-base text-red-400 font-bold leading-relaxed">
+                 Akun Belum Aktif silahkan Hubungin Admin Untuk mengaktifkan Akun
+               </p>
+             </div>
+
+             <p className="text-xs text-gray-400 mb-6 leading-relaxed">
+               Status akun Anda saat ini sedang dinonaktifkan oleh Administrator. Penarikan saldo tidak dapat diproses sampai akun diaktifkan kembali.
+             </p>
+
+             <div className="flex flex-col sm:flex-row gap-3 justify-center">
+               <a 
+                 href="https://wa.me/6281234567890" 
+                 target="_blank" 
+                 rel="noreferrer"
+                 className="inline-flex items-center justify-center px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg text-sm transition-all shadow-md shadow-emerald-900/30"
+               >
+                 Hubungi Admin
+               </a>
+               <button 
+                 onClick={() => setShowInactiveModal(false)}
+                 className="px-5 py-2.5 bg-gray-700 hover:bg-gray-600 text-gray-200 font-semibold rounded-lg text-sm transition-all"
+               >
+                 Tutup
+               </button>
+             </div>
+           </div>
+         </div>
+       )}
     </WalletLayout>
   );
 };

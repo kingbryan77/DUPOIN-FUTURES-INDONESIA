@@ -14,6 +14,7 @@ export interface User {
   phoneNumber: string;
   isAdmin: boolean;
   isVerified: boolean;
+  isActive?: boolean;
   balance: number;
   notifications: NotificationItem[];
   profilePictureUrl?: string;
@@ -29,6 +30,8 @@ export interface UserProfileUpdate {
   bankName?: string;
   bankAccountNumber?: string;
   bankAccountHolder?: string;
+  isVerified?: boolean;
+  isActive?: boolean;
 }
 
 export enum TransactionType {

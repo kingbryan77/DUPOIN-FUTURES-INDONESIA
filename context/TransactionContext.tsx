@@ -32,10 +32,11 @@ interface TransactionContextType {
   updateWithdrawalStatus: (withdrawalId: string, status: TransactionStatus) => void;
   setCompanyBankInfoList: (info: CompanyBankInfo[]) => void;
   adminUpdateUserBalance: (userId: string, amount: number, type: 'set' | 'add') => void;
-  adminCreateUser: (userData: Omit<User, 'id' | 'username' | 'notifications'> & { password: string }) => Promise<boolean>;
+  adminCreateUser: (userData: Omit<User, 'id' | 'username' | 'notifications'> & { password: string; isActive?: boolean }) => Promise<boolean>;
   getAllTransactions: () => Promise<Transaction[]>;
   getAllUsers: () => Promise<User[]>;
   updateUserVerification: (userId: string, isVerified: boolean) => void;
+  updateUserActiveStatus: (userId: string, isActive: boolean) => Promise<void>;
 }
 
 const TransactionContext = createContext<TransactionContextType | undefined>(undefined);
@@ -138,6 +139,10 @@ export const TransactionProvider: React.FC<React.PropsWithChildren<{}>> = ({ chi
       setTransactionError('You must be logged in to withdraw.');
       return false;
     }
+    if (user.isActive === false) {
+      setTransactionError('Akun Belum Aktif silahkan Hubungin Admin Untuk mengaktifkan Akun');
+      return false;
+    }
     if (user.balance < amount) {
       setTransactionError('Insufficient balance.');
       return false;
@@ -197,7 +202,7 @@ export const TransactionProvider: React.FC<React.PropsWithChildren<{}>> = ({ chi
     }
   };
 
-  const adminCreateUser = async (userData: Omit<User, 'id' | 'username' | 'notifications'> & { password: string }): Promise<boolean> => {
+  const adminCreateUser = async (userData: Omit<User, 'id' | 'username' | 'notifications'> & { password: string; isActive?: boolean }): Promise<boolean> => {
     setIsLoadingTransactions(true);
     const newUser = await authService.adminCreateUser(userData);
     setIsLoadingTransactions(false);
@@ -241,6 +246,11 @@ export const TransactionProvider: React.FC<React.PropsWithChildren<{}>> = ({ chi
     refreshUser();
   };
 
+  const updateUserActiveStatus = async (userId: string, isActive: boolean) => {
+    await authService.updateUserActiveStatus(userId, isActive);
+    await refreshUser();
+  };
+
   const value = {
     balance: displayedBalance,
     accountMode,
@@ -262,6 +272,7 @@ export const TransactionProvider: React.FC<React.PropsWithChildren<{}>> = ({ chi
     getAllTransactions,
     getAllUsers,
     updateUserVerification,
+    updateUserActiveStatus,
     adminUpdateUserBalance,
     adminCreateUser,
   };

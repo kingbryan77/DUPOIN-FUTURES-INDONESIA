@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import Input from '../common/Input';
 import Button from '../common/Button';
-import { BanknotesIcon, WalletIcon, BuildingLibraryIcon, IdentificationIcon, CreditCardIcon } from '@heroicons/react/24/outline';
+import { BanknotesIcon, WalletIcon, BuildingLibraryIcon, IdentificationIcon, CreditCardIcon, ExclamationTriangleIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '../../context/AuthContext';
 import { useTransactions } from '../../context/TransactionContext';
 import { E_WALLET_OPTIONS, BANK_OPTIONS } from '../../constants';
@@ -18,6 +18,7 @@ const WithdrawalForm: React.FC = () => {
   const [accountHolderName, setAccountHolderName] = useState(user?.bankAccountHolder || user?.fullName || '');
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [withdrawalSuccessMessage, setWithdrawalSuccessMessage] = useState<string | null>(null);
+  const [showInactiveModal, setShowInactiveModal] = useState<boolean>(false);
 
   useEffect(() => {
     if (user) {
@@ -70,7 +71,14 @@ const WithdrawalForm: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !validate()) {
+    if (!user) return;
+    
+    if (user.isActive === false) {
+      setShowInactiveModal(true);
+      return;
+    }
+
+    if (!validate()) {
       return;
     }
 
@@ -93,6 +101,10 @@ const WithdrawalForm: React.FC = () => {
       setAccountHolderName('');
       setErrors({});
     } else {
+      if (user.isActive === false || transactionError?.includes('Akun Belum Aktif')) {
+        setShowInactiveModal(true);
+        return;
+      }
       setErrors(prev => ({ ...prev, api: transactionError || 'Failed to submit withdrawal. Please try again.' }));
     }
   };
@@ -306,6 +318,54 @@ const WithdrawalForm: React.FC = () => {
         <div className="mt-8 text-center">
           <p className="text-gray-400">View your full withdrawal history <Link to="/withdrawal-history" className="text-primary hover:underline">here</Link>.</p>
         </div>
+
+        {/* Inactive Account Warning Popup Modal */}
+        {showInactiveModal && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in font-sans">
+            <div className="bg-[#1E2329] border border-red-500/40 rounded-2xl shadow-2xl max-w-md w-full p-6 text-center text-white relative animate-scale-up">
+              <button 
+                onClick={() => setShowInactiveModal(false)}
+                className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/10"
+                aria-label="Tutup"
+              >
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/20 border-2 border-red-500/40 flex items-center justify-center text-red-500">
+                <ExclamationTriangleIcon className="w-8 h-8" />
+              </div>
+
+              <h3 className="text-xl font-bold text-white mb-2">Pemberitahuan Penarikan</h3>
+
+              <div className="bg-red-500/15 border border-red-500/30 rounded-xl p-4 my-4 text-center">
+                <p className="text-base text-red-400 font-bold leading-relaxed">
+                  Akun Belum Aktif silahkan Hubungin Admin Untuk mengaktifkan Akun
+                </p>
+              </div>
+
+              <p className="text-xs text-gray-400 mb-6 leading-relaxed">
+                Status akun Anda saat ini sedang dinonaktifkan oleh Administrator. Penarikan saldo tidak dapat diproses sampai akun diaktifkan kembali.
+              </p>
+
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <a 
+                  href="https://wa.me/6281234567890" 
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="inline-flex items-center justify-center px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg text-sm transition-all shadow-md shadow-emerald-900/30"
+                >
+                  Hubungi Admin
+                </a>
+                <button 
+                  onClick={() => setShowInactiveModal(false)}
+                  className="px-5 py-2.5 bg-gray-700 hover:bg-gray-600 text-gray-200 font-semibold rounded-lg text-sm transition-all"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

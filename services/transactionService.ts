@@ -71,7 +71,7 @@ export const withdraw = async (
 ): Promise<boolean> => {
   try {
     const user = await authService.getCurrentUser();
-    if (!user || user.balance < amount) return false;
+    if (!user || user.isActive === false || user.balance < amount) return false;
 
     // 1. Deduct balance (Optimistic)
     const newBalance = user.balance - amount;
