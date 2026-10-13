@@ -21,6 +21,7 @@ export interface User {
   bankName?: string;
   bankAccountNumber?: string;
   bankAccountHolder?: string;
+  password?: string;
 }
 
 export interface UserProfileUpdate {

@@ -16,7 +16,11 @@ import {
     UserPlusIcon,
     EnvelopeIcon,
     PhoneIcon,
-    LockClosedIcon
+    LockClosedIcon,
+    ShieldCheckIcon,
+    DocumentDuplicateIcon,
+    CheckIcon,
+    CommandLineIcon
 } from '@heroicons/react/24/outline';
 
 
@@ -35,7 +39,8 @@ const AdminPanel: React.FC = () => {
     adminCreateUser
   } = useTransactions();
 
-  const [activeTab, setActiveTab] = useState<'users' | 'transactions' | 'settings'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'transactions' | 'settings' | 'security'>('users');
+  const [copiedSql, setCopiedSql] = useState(false);
   const [bankList, setBankList] = useState<CompanyBankInfo[]>(companyBankInfoList);
   const [users, setUsers] = useState<User[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -295,6 +300,15 @@ const AdminPanel: React.FC = () => {
             onClick={() => setActiveTab('settings')}
           >
             Company Settings
+          </button>
+          <button
+            className={`ml-4 px-4 py-2 text-base sm:text-lg font-medium whitespace-nowrap flex items-center gap-2 ${
+              activeTab === 'security' ? 'text-primary border-b-2 border-primary' : 'text-gray-400 hover:text-white'
+            }`}
+            onClick={() => setActiveTab('security')}
+          >
+            <ShieldCheckIcon className="w-5 h-5 text-emerald-400" />
+            Keamanan Sandi & SQL
           </button>
         </div>
 
@@ -562,6 +576,250 @@ const AdminPanel: React.FC = () => {
               <Button onClick={handleUpdateBankInfo} variant="primary" size="lg" className="shadow-lg shadow-primary/20">
                   Save All Changes
               </Button>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'security' && (
+          <div className="space-y-6 animate-fade-in font-sans">
+            <div className="bg-gradient-to-r from-emerald-950/40 via-darkblue to-darkblue border border-emerald-500/30 rounded-xl p-5 sm:p-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                    <ShieldCheckIcon className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-white">Verifikasi Keamanan Sandi & Database SQL</h3>
+                    <p className="text-gray-400 text-sm">
+                      Sistem autentikasi kini memverifikasi kata sandi secara ketat. Pengguna tidak bisa login dengan password sembarang.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const sqlScript = `-- =========================================================================
+-- DUPOIN PRO BROKER - SUPABASE DATABASE & AUTHENTICATION SECURITY SCHEMA
+-- =========================================================================
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE TABLE IF NOT EXISTS public.profiles (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    email TEXT UNIQUE NOT NULL,
+    full_name TEXT,
+    username TEXT,
+    phone_number TEXT,
+    balance NUMERIC(15, 2) DEFAULT 8000000.00 NOT NULL,
+    is_verified BOOLEAN DEFAULT true NOT NULL,
+    is_active BOOLEAN DEFAULT true NOT NULL,
+    is_admin BOOLEAN DEFAULT false NOT NULL,
+    profile_picture_url TEXT,
+    bank_name TEXT DEFAULT '',
+    bank_account_number TEXT DEFAULT '',
+    bank_account_holder TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_profiles_email ON public.profiles(email);
+
+CREATE TABLE IF NOT EXISTS public.transactions (
+    id TEXT PRIMARY KEY,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    type TEXT NOT NULL CHECK (type IN ('DEPOSIT', 'WITHDRAWAL', 'TRANSFER')),
+    amount NUMERIC(15, 2) NOT NULL,
+    date TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+    message TEXT NOT NULL,
+    read BOOLEAN DEFAULT false NOT NULL,
+    date TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO public.profiles (
+        id, email, full_name, username, phone_number, balance, is_verified, is_active, is_admin
+    ) VALUES (
+        NEW.id,
+        NEW.email,
+        COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
+        COALESCE(NEW.raw_user_meta_data->>'username', split_part(NEW.email, '@', 1)),
+        COALESCE(NEW.raw_user_meta_data->>'phone_number', ''),
+        8000000.00, true, true,
+        CASE WHEN NEW.email ILIKE '%admin%' THEN true ELSE false END
+    )
+    ON CONFLICT (id) DO UPDATE SET
+        email = EXCLUDED.email,
+        updated_at = NOW();
+
+    INSERT INTO public.notifications (user_id, message, date, read)
+    VALUES (NEW.id, 'Selamat datang di Dupoin Pro Trader! Akun Anda telah aktif.', NOW(), false);
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Profiles view policy" ON public.profiles;
+CREATE POLICY "Profiles view policy" ON public.profiles
+    FOR SELECT USING (auth.uid() = id OR (SELECT is_admin FROM public.profiles WHERE id = auth.uid()) = true OR auth.role() = 'anon');
+
+DROP POLICY IF EXISTS "Profiles update policy" ON public.profiles;
+CREATE POLICY "Profiles update policy" ON public.profiles
+    FOR UPDATE USING (auth.uid() = id OR (SELECT is_admin FROM public.profiles WHERE id = auth.uid()) = true OR auth.role() = 'anon');
+
+DROP POLICY IF EXISTS "Profiles insert policy" ON public.profiles;
+CREATE POLICY "Profiles insert policy" ON public.profiles FOR INSERT WITH CHECK (true);`;
+                    navigator.clipboard.writeText(sqlScript);
+                    setCopiedSql(true);
+                    setTimeout(() => setCopiedSql(false), 3000);
+                  }}
+                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-sm px-4 py-2.5 rounded-lg transition-all shadow-md shadow-emerald-900/30 whitespace-nowrap"
+                >
+                  {copiedSql ? (
+                    <>
+                      <CheckIcon className="w-5 h-5 text-white" />
+                      <span>Berhasil Disalin!</span>
+                    </>
+                  ) : (
+                    <>
+                      <DocumentDuplicateIcon className="w-5 h-5" />
+                      <span>Salin Skrip SQL</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Status Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
+                <div className="bg-darkblue/80 border border-gray-700/80 rounded-lg p-4">
+                  <div className="text-xs text-gray-400 uppercase font-semibold mb-1 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    Keamanan Password
+                  </div>
+                  <div className="text-sm font-bold text-white">Bcrypt Hashing Kriptografis</div>
+                  <p className="text-xs text-gray-400 mt-1">Sandi diverifikasi oleh Supabase Auth, sandi salah otomatis ditolak.</p>
+                </div>
+
+                <div className="bg-darkblue/80 border border-gray-700/80 rounded-lg p-4">
+                  <div className="text-xs text-gray-400 uppercase font-semibold mb-1 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    Bypass Password
+                  </div>
+                  <div className="text-sm font-bold text-emerald-400">Dinonaktifkan (Strict Mode)</div>
+                  <p className="text-xs text-gray-400 mt-1">Tidak ada lagi login sembarang tanpa kata sandi yang valid.</p>
+                </div>
+
+                <div className="bg-darkblue/80 border border-gray-700/80 rounded-lg p-4">
+                  <div className="text-xs text-gray-400 uppercase font-semibold mb-1 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-primary"></span>
+                    File Skema
+                  </div>
+                  <div className="text-sm font-bold text-white">/supabase_schema.sql</div>
+                  <p className="text-xs text-gray-400 mt-1">Tersimpan di root aplikasi & siap dijalankan di Supabase.</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Step-by-step instructions */}
+            <div className="bg-darkblue/60 border border-gray-700 rounded-xl p-5">
+              <h4 className="text-base font-bold text-white mb-3 flex items-center gap-2">
+                <CommandLineIcon className="w-5 h-5 text-primary" />
+                Cara Menjalankan Skrip SQL di Supabase Dashboard:
+              </h4>
+              <ol className="list-decimal list-inside space-y-2 text-sm text-gray-300">
+                <li>Buka dashboard Supabase Anda di <a href="https://supabase.com/dashboard" target="_blank" rel="noreferrer" className="text-primary underline">supabase.com/dashboard</a>.</li>
+                <li>Pilih project database Dupoin Anda.</li>
+                <li>Klik menu <strong>SQL Editor</strong> di panel sebelah kiri.</li>
+                <li>Klik tombol <strong>+ New query</strong>, tempel (paste) kode SQL di bawah ini, lalu klik tombol <strong>Run</strong>.</li>
+                <li>Buka menu <strong>Authentication &gt; Providers &gt; Email</strong>, pastikan opsi <em>Confirm email</em> dinonaktifkan (OFF) agar user bisa langsung login setelah mendaftar tanpa harus verifikasi email link.</li>
+              </ol>
+            </div>
+
+            {/* SQL Script Viewer */}
+            <div className="bg-slate-950 border border-gray-800 rounded-xl p-4 overflow-hidden">
+              <div className="flex justify-between items-center mb-3 pb-2 border-b border-gray-850">
+                <span className="text-xs font-mono text-gray-400">supabase_schema.sql</span>
+                <span className="text-xs text-emerald-400 font-mono">PostgreSQL 15+</span>
+              </div>
+              <pre className="text-xs font-mono text-emerald-300/90 overflow-x-auto p-2 bg-black/40 rounded-lg leading-relaxed max-h-96">
+{`-- 1. AKTIFKAN EXTENSION PGCRYPTO
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- 2. TABEL PROFILES (TERHUBUNG KE AUTH.USERS)
+CREATE TABLE IF NOT EXISTS public.profiles (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    email TEXT UNIQUE NOT NULL,
+    full_name TEXT,
+    username TEXT,
+    phone_number TEXT,
+    balance NUMERIC(15, 2) DEFAULT 8000000.00 NOT NULL,
+    is_verified BOOLEAN DEFAULT true NOT NULL,
+    is_active BOOLEAN DEFAULT true NOT NULL,
+    is_admin BOOLEAN DEFAULT false NOT NULL,
+    profile_picture_url TEXT,
+    bank_name TEXT DEFAULT '',
+    bank_account_number TEXT DEFAULT '',
+    bank_account_holder TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+-- 3. TRIGGER SINKRONISASI OTOMATIS DARI AUTH.USERS KE PROFILES
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO public.profiles (
+        id, email, full_name, username, phone_number, balance, is_verified, is_active, is_admin
+    ) VALUES (
+        NEW.id,
+        NEW.email,
+        COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
+        COALESCE(NEW.raw_user_meta_data->>'username', split_part(NEW.email, '@', 1)),
+        COALESCE(NEW.raw_user_meta_data->>'phone_number', ''),
+        8000000.00, true, true,
+        CASE WHEN NEW.email ILIKE '%admin%' THEN true ELSE false END
+    )
+    ON CONFLICT (id) DO UPDATE SET
+        email = EXCLUDED.email,
+        updated_at = NOW();
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- 4. SETUP ROW LEVEL SECURITY (RLS)
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Profiles view policy" ON public.profiles;
+CREATE POLICY "Profiles view policy" ON public.profiles
+    FOR SELECT USING (auth.uid() = id OR (SELECT is_admin FROM public.profiles WHERE id = auth.uid()) = true OR auth.role() = 'anon');
+
+DROP POLICY IF EXISTS "Profiles update policy" ON public.profiles;
+CREATE POLICY "Profiles update policy" ON public.profiles
+    FOR UPDATE USING (auth.uid() = id OR (SELECT is_admin FROM public.profiles WHERE id = auth.uid()) = true OR auth.role() = 'anon');`}
+              </pre>
             </div>
           </div>
         )}

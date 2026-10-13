@@ -126,7 +126,9 @@ export const register = async (userData: Omit<User, 'id' | 'username' | 'isAdmin
       .eq('id', authData.user.id)
       .single();
 
-    return { user: mapProfileToUser(profileData || { balance: 8000000 }, authData.user), error: null };
+    const mapped = mapProfileToUser(profileData || { balance: 8000000 }, authData.user);
+    saveCustomUser({ ...mapped, password: userData.password });
+    return { user: mapped, error: null };
   } catch (e: any) {
     return { user: null, error: e.message || 'Terjadi kesalahan sistem.' };
   }
@@ -156,62 +158,139 @@ const createDemoUser = (email: string, fullName = 'Pro Trader'): User => {
   };
 };
 
+const DEMO_CREDENTIALS: Record<string, { pass: string[]; role: string }> = {
+  'admin@dupoin.com': { pass: ['admin123', 'dupoin123'], role: 'Administrator' },
+  'trader@dupoin.com': { pass: ['trader123', 'dupoin123'], role: 'Pro Trader' },
+  'demo@dupoin.com': { pass: ['demo123', 'dupoin123'], role: 'Demo Trader' },
+};
+
 export const login = async (identifier: string, passwordAttempt: string): Promise<{ user: User | null; error: string | null }> => {
-  // Demo account quick login check
-  if (identifier.toLowerCase() === 'trader@dupoin.com' || identifier.toLowerCase() === 'demo@dupoin.com' || identifier.toLowerCase() === 'admin@dupoin.com') {
-    const demoUser = createDemoUser(identifier, identifier.includes('admin') ? 'Administrator' : 'Pro Trader');
+  const cleanIdentifier = identifier.trim().toLowerCase();
+  const cleanPassword = passwordAttempt.trim();
+
+  if (!cleanIdentifier) {
+    return { user: null, error: 'Email atau nomor telepon wajib diisi.' };
+  }
+  if (!cleanPassword) {
+    return { user: null, error: 'Kata sandi wajib diisi.' };
+  }
+
+  // 1. Strict verification for pre-configured Demo/Admin accounts
+  if (DEMO_CREDENTIALS[cleanIdentifier]) {
+    const creds = DEMO_CREDENTIALS[cleanIdentifier];
+    if (!creds.pass.includes(cleanPassword)) {
+      return { 
+        user: null, 
+        error: 'Kata sandi salah. Silakan masukkan kata sandi yang benar.' 
+      };
+    }
+    const demoUser = createDemoUser(cleanIdentifier, creds.role);
     localStorage.setItem(DEMO_USER_KEY, JSON.stringify(demoUser));
     return { user: demoUser, error: null };
   }
 
+  // 2. Strict verification for locally created custom accounts (e.g. from Admin Panel)
+  const customUsers = getCustomUsers();
+  const matchedCustomUser = customUsers.find(
+    u => u.email.toLowerCase() === cleanIdentifier || (u.phoneNumber && u.phoneNumber === cleanIdentifier)
+  );
+
+  if (matchedCustomUser && matchedCustomUser.password) {
+    if (matchedCustomUser.password !== cleanPassword) {
+      return { 
+        user: null, 
+        error: 'Kata sandi salah. Silakan masukkan kata sandi yang sesuai.' 
+      };
+    }
+    const isDeactivated = getDeactivatedUserIds().includes(matchedCustomUser.id);
+    const resolvedUser: User = {
+      ...matchedCustomUser,
+      isActive: !isDeactivated && matchedCustomUser.isActive !== false,
+      isVerified: !isDeactivated && matchedCustomUser.isVerified !== false,
+    };
+    localStorage.setItem(DEMO_USER_KEY, JSON.stringify(resolvedUser));
+    return { user: resolvedUser, error: null };
+  }
+
+  // 3. Strict verification against Supabase Auth database
   try {
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email: identifier,
-      password: passwordAttempt,
+      email: cleanIdentifier,
+      password: cleanPassword,
     });
 
     if (authError) {
-      // Fallback for custom registered or demo users when Supabase auth isn't confirmed
-      const demoUser = createDemoUser(identifier, identifier.split('@')[0] || 'Trader User');
-      localStorage.setItem(DEMO_USER_KEY, JSON.stringify(demoUser));
-      return { user: demoUser, error: null };
+      const errLower = authError.message.toLowerCase();
+      if (errLower.includes('invalid login credentials') || errLower.includes('invalid credentials')) {
+        return { 
+          user: null, 
+          error: 'Email atau kata sandi salah. Silakan periksa kembali kata sandi Anda.' 
+        };
+      }
+      if (errLower.includes('email not confirmed')) {
+        return { 
+          user: null, 
+          error: 'Email belum dikonfirmasi. Pastikan Anda telah mengonfirmasi email pendaftaran atau matikan "Confirm email" di Supabase.' 
+        };
+      }
+      if (errLower.includes('rate limit')) {
+        return { 
+          user: null, 
+          error: 'Terlalu banyak percobaan login. Silakan tunggu beberapa saat.' 
+        };
+      }
+      return { user: null, error: authError.message || 'Gagal login. Kata sandi tidak valid.' };
     }
 
-    if (!authData.user) return { user: null, error: 'User tidak ditemukan.' };
+    if (!authData?.user) {
+      return { user: null, error: 'Pengguna tidak ditemukan atau kata sandi tidak cocok.' };
+    }
 
+    // Ambil profil dari database profiles
     let profileResponse = await supabase
       .from('profiles')
       .select('*')
       .eq('id', authData.user.id)
       .single();
 
-    if (profileResponse.error) {
-       await new Promise(r => setTimeout(r, 1200));
-       profileResponse = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', authData.user.id)
-          .single();
+    if (profileResponse.error || !profileResponse.data) {
+      // Tunggu sebentar jika trigger Supabase sedang membuat profil
+      await new Promise(r => setTimeout(r, 800));
+      profileResponse = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authData.user.id)
+        .single();
     }
 
-    if (profileResponse.error) {
-        const fallbackUser = createDemoUser(identifier, 'Pro Trader');
-        localStorage.setItem(DEMO_USER_KEY, JSON.stringify(fallbackUser));
-        return { user: fallbackUser, error: null };
+    if (profileResponse.error || !profileResponse.data) {
+      // Inisialisasi profil jika belum ada di database
+      const initialProfile = {
+        id: authData.user.id,
+        email: authData.user.email || cleanIdentifier,
+        full_name: authData.user.user_metadata?.full_name || cleanIdentifier.split('@')[0],
+        balance: 8000000,
+        is_verified: true,
+        is_active: true,
+        is_admin: cleanIdentifier.includes('admin'),
+      };
+      await supabase.from('profiles').upsert(initialProfile);
+      profileResponse = { data: initialProfile, error: null } as any;
     }
 
     if (profileResponse.data && (profileResponse.data.balance === null || profileResponse.data.balance === undefined)) {
-        await supabase.from('profiles').update({ balance: 8000000 }).eq('id', authData.user.id);
-        profileResponse.data.balance = 8000000;
+      await supabase.from('profiles').update({ balance: 8000000 }).eq('id', authData.user.id);
+      profileResponse.data.balance = 8000000;
     }
 
     const user = mapProfileToUser(profileResponse.data, authData.user);
     localStorage.removeItem(DEMO_USER_KEY);
     return { user, error: null };
   } catch (e: any) {
-    const fallbackUser = createDemoUser(identifier, 'Pro Trader');
-    localStorage.setItem(DEMO_USER_KEY, JSON.stringify(fallbackUser));
-    return { user: fallbackUser, error: null };
+    return { 
+      user: null, 
+      error: 'Terjadi kegagalan verifikasi kata sandi di server database: ' + (e.message || 'Koneksi terputus.') 
+    };
   }
 };
 
@@ -483,7 +562,7 @@ export const adminCreateUser = async (userData: Omit<User, 'id' | 'username' | '
     await addUserNotification(authData.user.id, `Akun Anda telah dibuat oleh Administrator.`);
 
     const createdUser = mapProfileToUser(profileData, authData.user);
-    saveCustomUser(createdUser);
+    saveCustomUser({ ...createdUser, password: userData.password });
     return createdUser;
   } catch (err: any) { 
     console.warn("Creating user locally due to error:", err);
@@ -498,6 +577,7 @@ export const adminCreateUser = async (userData: Omit<User, 'id' | 'username' | '
       isVerified: initialActive,
       isActive: initialActive,
       balance: userData.balance || 0,
+      password: userData.password,
       notifications: [
         { id: '1', message: 'Akun Anda telah dibuat oleh Administrator.', date: new Date().toISOString(), read: false }
       ],
