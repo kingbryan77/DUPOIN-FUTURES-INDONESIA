@@ -12,6 +12,8 @@ interface AuthContextType {
   error: string | null;
   verifyEmail: (email: string) => Promise<boolean>;
   refreshUser: () => void;
+  registrationNotice: string | null;
+  clearRegistrationNotice: () => void;
   updateProfile: (updatedData: UserProfileUpdate) => Promise<boolean>;
 }
 
@@ -22,6 +24,9 @@ export const AuthProvider: React.FC<React.PropsWithChildren<{}>> = ({ children }
   const [status, setStatus] = useState<AuthStatus>(AuthStatus.LOADING);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [registrationNotice, setRegistrationNotice] = useState<string | null>(null);
+
+  const clearRegistrationNotice = () => setRegistrationNotice(null);
 
   const refreshUser = useCallback(async () => {
     setIsLoading(true);
@@ -55,8 +60,12 @@ export const AuthProvider: React.FC<React.PropsWithChildren<{}>> = ({ children }
   const register = async (userData: Omit<User, 'id' | 'username' | 'isAdmin' | 'isVerified' | 'balance' | 'notifications' | 'profilePictureUrl'> & { password: string }): Promise<boolean> => {
     setIsLoading(true);
     setError(null);
+    setRegistrationNotice(null);
     const result = await authService.register(userData);
     if (result.user) {
+      if (result.warning) {
+        setRegistrationNotice(result.warning);
+      }
       setIsLoading(false);
       return true;
     } else {
@@ -116,6 +125,8 @@ export const AuthProvider: React.FC<React.PropsWithChildren<{}>> = ({ children }
     error,
     verifyEmail,
     refreshUser,
+    registrationNotice,
+    clearRegistrationNotice,
     updateProfile,
   };
 

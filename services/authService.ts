@@ -1,5 +1,5 @@
 import { User, UserProfileUpdate } from '../types';
-import { supabase } from './supabaseClient';
+import { supabase, getSupabaseConfig, testSupabaseConnection } from './supabaseClient';
 
 const DEACTIVATED_USERS_KEY = 'dupoin_deactivated_user_ids';
 
@@ -88,7 +88,7 @@ const mapProfileToUser = (profile: any, authUser: any): User => {
   };
 };
 
-export const register = async (userData: Omit<User, 'id' | 'username' | 'isAdmin' | 'isVerified' | 'balance' | 'notifications' | 'profilePictureUrl'> & { password: string }): Promise<{ user: User | null; error: string | null }> => {
+export const register = async (userData: Omit<User, 'id' | 'username' | 'isAdmin' | 'isVerified' | 'balance' | 'notifications' | 'profilePictureUrl'> & { password: string }): Promise<{ user: User | null; error: string | null; warning?: string | null }> => {
   const cleanEmail = userData.email.trim().toLowerCase();
   const cleanPassword = userData.password.trim();
   const cleanFullName = userData.fullName.trim();
@@ -103,17 +103,19 @@ export const register = async (userData: Omit<User, 'id' | 'username' | 'isAdmin
     return { user: null, error: 'Kata sandi minimal 6 karakter.' };
   }
 
-  // Periksa apakah email sudah digunakan
+  // Periksa apakah email sudah terdaftar di data custom user lokal
   const existingCustom = getCustomUsers().find(u => u.email.toLowerCase() === cleanEmail);
   if (existingCustom) {
     return { user: null, error: 'Email sudah terdaftar. Silakan gunakan email lain atau masuk dengan kata sandi Anda.' };
   }
 
-  // 1. Coba daftarkan ke Supabase (jika koneksi tersedia)
+  // 1. Coba daftarkan langsung ke database Supabase
   let createdSupabaseUser: User | null = null;
+  let supabaseWarning: string | null = null;
+
   try {
     const timeoutPromise = new Promise<{ data: any; error: any }>((_, reject) => 
-      setTimeout(() => reject(new Error('Supabase network timeout')), 2500)
+      setTimeout(() => reject(new Error('Koneksi Supabase timeout (>3.5s). Pastikan Project URL Supabase aktif & benar.')), 3500)
     );
     const signUpPromise = supabase.auth.signUp({
       email: cleanEmail,
@@ -121,41 +123,58 @@ export const register = async (userData: Omit<User, 'id' | 'username' | 'isAdmin
       options: {
         data: {
           full_name: cleanFullName,
+          username: cleanEmail.split('@')[0],
+          phone_number: userData.phoneNumber || '',
         }
       }
     });
 
     const { data: authData, error: authError } = await Promise.race([signUpPromise, timeoutPromise]) as any;
 
-    if (!authError && authData?.user) {
-      await supabase.from('profiles').upsert({
+    if (authError) {
+      if (authError.message?.toLowerCase().includes('already registered')) {
+        return { user: null, error: 'Email ini sudah terdaftar di database Supabase.' };
+      }
+      supabaseWarning = `Koneksi Supabase Auth: ${authError.message}`;
+    } else if (authData?.user) {
+      // Masukkan profil langsung ke public.profiles
+      const profileRow = {
         id: authData.user.id,
         email: cleanEmail,
         full_name: cleanFullName,
+        username: cleanEmail.split('@')[0],
         phone_number: userData.phoneNumber || '',
         balance: 8000000,
         is_verified: true,
+        is_active: true,
         is_admin: false,
-      });
+      };
 
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', authData.user.id)
-        .single();
+      const { error: profileError } = await supabase.from('profiles').upsert(profileRow);
+      if (profileError) {
+        supabaseWarning = `User masuk ke Supabase Auth, tetapi baris profiles gagal: ${profileError.message}. Pastikan skrip supabase_schema.sql telah dijalankan di SQL Editor Supabase.`;
+      }
 
-      createdSupabaseUser = mapProfileToUser(profileData || { balance: 8000000 }, authData.user);
+      // Notifikasi selamat datang otomatis
+      await supabase.from('notifications').insert([{
+        user_id: authData.user.id,
+        message: 'Selamat datang di Dupoin Pro Trader! Akun Anda telah aktif dan terverifikasi.',
+        date: new Date().toISOString(),
+        read: false
+      }]).catch(() => {});
+
+      createdSupabaseUser = mapProfileToUser(profileRow, authData.user);
     }
   } catch (e: any) {
-    console.warn("Supabase Auth signUp offline or unreachable, proceeding with secure local registration:", e?.message || e);
+    supabaseWarning = `Supabase tidak dapat dijangkau (${e?.message || e}). URL Supabase belum dihubungkan di Pengaturan Admin.`;
   }
 
   if (createdSupabaseUser) {
     saveCustomUser({ ...createdSupabaseUser, password: cleanPassword });
-    return { user: createdSupabaseUser, error: null };
+    return { user: createdSupabaseUser, error: null, warning: supabaseWarning };
   }
 
-  // 2. Fallback pembuatan akun baru yang selalu berhasil (tersimpan aman beserta password)
+  // 2. Fallback pembuatan akun baru yang selalu aman beserta password
   const newId = 'user-' + Date.now();
   const newUser: User = {
     id: newId,
@@ -169,7 +188,7 @@ export const register = async (userData: Omit<User, 'id' | 'username' | 'isAdmin
     balance: 8000000,
     password: cleanPassword,
     notifications: [
-      { id: '1', message: 'Selamat datang di Dupoin Pro Trader! Akun Anda telah aktif dan terverifikasi.', date: new Date().toISOString(), read: false }
+      { id: '1', message: 'Selamat datang di Dupoin Pro Trader! Akun Anda telah aktif.', date: new Date().toISOString(), read: false }
     ],
     bankName: '',
     bankAccountNumber: '',
@@ -177,7 +196,11 @@ export const register = async (userData: Omit<User, 'id' | 'username' | 'isAdmin
   };
 
   saveCustomUser(newUser);
-  return { user: newUser, error: null };
+  return { 
+    user: newUser, 
+    error: null, 
+    warning: supabaseWarning || 'Akun tersimpan di browser lokal saja (belum masuk ke table Supabase). Silakan atur Project URL & Anon Key Supabase di Panel Admin.' 
+  };
 };
 
 const DEMO_USER_KEY = 'dupoin_demo_user';
@@ -699,3 +722,82 @@ export const adminCreateUser = async (userData: Omit<User, 'id' | 'username' | '
 };
 
 export const verifyEmail = async (email: string) => true;
+
+/**
+ * Sinkronisasi seluruh user yang terdaftar lokal ke Supabase Auth & public.profiles
+ */
+export const syncCustomUsersToSupabase = async (): Promise<{
+  total: number;
+  synced: number;
+  failed: number;
+  errors: string[];
+}> => {
+  const users = getCustomUsers();
+  let synced = 0;
+  let failed = 0;
+  const errors: string[] = [];
+
+  for (const u of users) {
+    try {
+      // 1. Daftarkan ke Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: u.email,
+        password: u.password || 'Password123!',
+        options: {
+          data: {
+            full_name: u.fullName,
+            username: u.username || u.email.split('@')[0],
+            phone_number: u.phoneNumber || '',
+          }
+        }
+      });
+
+      // Jika email sudah ada di auth.users, kita tetap coba upsert ke public.profiles
+      const targetId = authData?.user?.id || u.id;
+
+      // 2. Masukkan ke public.profiles
+      const { error: profileError } = await supabase.from('profiles').upsert({
+        id: targetId,
+        email: u.email,
+        full_name: u.fullName,
+        username: u.username || u.email.split('@')[0],
+        phone_number: u.phoneNumber || '',
+        balance: u.balance || 8000000,
+        is_verified: u.isVerified !== undefined ? u.isVerified : true,
+        is_active: u.isActive !== undefined ? u.isActive : true,
+        is_admin: u.isAdmin || false,
+        bank_name: u.bankName || '',
+        bank_account_number: u.bankAccountNumber || '',
+        bank_account_holder: u.bankAccountHolder || u.fullName,
+      });
+
+      if (profileError) {
+        // Coba insert jika upsert gagal
+        const { error: insertErr } = await supabase.from('profiles').insert([{
+          id: targetId,
+          email: u.email,
+          full_name: u.fullName,
+          username: u.username || u.email.split('@')[0],
+          phone_number: u.phoneNumber || '',
+          balance: u.balance || 8000000,
+          is_verified: u.isVerified !== undefined ? u.isVerified : true,
+          is_active: u.isActive !== undefined ? u.isActive : true,
+          is_admin: u.isAdmin || false,
+        }]);
+
+        if (insertErr) {
+          failed++;
+          errors.push(`${u.email}: ${insertErr.message}`);
+          continue;
+        }
+      }
+
+      synced++;
+    } catch (e: any) {
+      failed++;
+      errors.push(`${u.email}: ${e?.message || 'Error sinkronisasi'}`);
+    }
+  }
+
+  return { total: users.length, synced, failed, errors };
+};

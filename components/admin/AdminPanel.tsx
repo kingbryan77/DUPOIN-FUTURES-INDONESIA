@@ -20,9 +20,15 @@ import {
     ShieldCheckIcon,
     DocumentDuplicateIcon,
     CheckIcon,
-    CommandLineIcon
+    CommandLineIcon,
+    ArrowPathIcon,
+    ServerIcon,
+    LinkIcon,
+    ExclamationTriangleIcon,
+    CheckCircleIcon
 } from '@heroicons/react/24/outline';
-
+import { getSupabaseConfig, updateSupabaseConfig, resetSupabaseConfig, testSupabaseConnection } from '../../services/supabaseClient';
+import * as authService from '../../services/authService';
 
 const AdminPanel: React.FC = () => {
   const { user } = useAuth();
@@ -70,6 +76,75 @@ const AdminPanel: React.FC = () => {
   });
   const [createError, setCreateError] = useState<string | null>(null);
   const [createLoading, setCreateLoading] = useState(false);
+
+  // Supabase Configuration & Health State
+  const initialSupabaseConfig = getSupabaseConfig();
+  const [supabaseUrlInput, setSupabaseUrlInput] = useState(initialSupabaseConfig.url);
+  const [supabaseKeyInput, setSupabaseKeyInput] = useState(initialSupabaseConfig.anonKey);
+  const [isCustomSupabase, setIsCustomSupabase] = useState(initialSupabaseConfig.isCustom);
+  const [supabaseTestLoading, setSupabaseTestLoading] = useState(false);
+  const [supabaseTestStatus, setSupabaseTestStatus] = useState<{ success: boolean; message: string; details?: any } | null>(null);
+  const [isSyncingUsers, setIsSyncingUsers] = useState(false);
+  const [syncReport, setSyncReport] = useState<{ total: number; synced: number; failed: number; errors: string[] } | null>(null);
+
+  const handleTestSupabase = async () => {
+    setSupabaseTestLoading(true);
+    setSupabaseTestStatus(null);
+    const res = await testSupabaseConnection();
+    setSupabaseTestStatus(res);
+    setSupabaseTestLoading(false);
+  };
+
+  const handleSaveSupabaseConfig = (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = updateSupabaseConfig(supabaseUrlInput, supabaseKeyInput);
+    if (res.success) {
+      setIsCustomSupabase(true);
+      setUserActionMessage({ text: 'Kredensial Supabase berhasil disimpan! Silakan klik "Test Koneksi".', type: 'success' });
+      setTimeout(() => setUserActionMessage(null), 4000);
+      handleTestSupabase();
+    } else {
+      setUserActionMessage({ text: res.error || 'Gagal menyimpan kredensial.', type: 'error' });
+      setTimeout(() => setUserActionMessage(null), 4000);
+    }
+  };
+
+  const handleResetSupabaseConfig = () => {
+    resetSupabaseConfig();
+    const cfg = getSupabaseConfig();
+    setSupabaseUrlInput(cfg.url);
+    setSupabaseKeyInput(cfg.anonKey);
+    setIsCustomSupabase(false);
+    setSupabaseTestStatus(null);
+    setUserActionMessage({ text: 'Kredensial Supabase dikembalikan ke default.', type: 'success' });
+    setTimeout(() => setUserActionMessage(null), 3000);
+  };
+
+  const handleSyncUsers = async () => {
+    setIsSyncingUsers(true);
+    setSyncReport(null);
+    try {
+      const report = await authService.syncCustomUsersToSupabase();
+      setSyncReport(report);
+      if (report.synced > 0) {
+        setUserActionMessage({ 
+          text: `Berhasil menyinkronkan ${report.synced} pengguna ke database Supabase!`, 
+          type: 'success' 
+        });
+      } else if (report.failed > 0) {
+        setUserActionMessage({ 
+          text: `Gagal sinkronisasi (${report.errors[0] || 'Periksa koneksi Supabase'}).`, 
+          type: 'error' 
+        });
+      }
+      setTimeout(() => setUserActionMessage(null), 5000);
+      await loadData();
+    } catch (err: any) {
+      setUserActionMessage({ text: `Gagal sinkronisasi: ${err?.message || err}`, type: 'error' });
+    } finally {
+      setIsSyncingUsers(false);
+    }
+  };
 
   useEffect(() => {
     setBankList(companyBankInfoList);
@@ -339,8 +414,8 @@ const AdminPanel: React.FC = () => {
             }`}
             onClick={() => setActiveTab('security')}
           >
-            <ShieldCheckIcon className="w-5 h-5 text-emerald-400" />
-            Keamanan Sandi & SQL
+            <ServerIcon className="w-5 h-5 text-emerald-400" />
+            Database Supabase & SQL
           </button>
         </div>
 
@@ -374,10 +449,37 @@ const AdminPanel: React.FC = () => {
                     </span>
                   </div>
                 </div>
-                <Button variant="primary" size="sm" onClick={() => setIsCreateModalOpen(true)}>
-                    <UserPlusIcon className="w-4 h-4 mr-2" />
-                    Create New User
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={handleSyncUsers} 
+                    isLoading={isSyncingUsers}
+                    className="border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+                  >
+                    <ArrowPathIcon className="w-4 h-4 mr-2" />
+                    Sinkronkan ke Supabase
+                  </Button>
+                  <Button variant="primary" size="sm" onClick={() => setIsCreateModalOpen(true)}>
+                      <UserPlusIcon className="w-4 h-4 mr-2" />
+                      Create New User
+                  </Button>
+                </div>
+            </div>
+
+            <div className="bg-primary/10 border border-primary/30 rounded-xl p-3.5 mb-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div className="flex items-center gap-2.5 text-xs text-gray-300">
+                <ServerIcon className="w-5 h-5 text-primary flex-shrink-0" />
+                <span>
+                  <strong className="text-white">Status Database Supabase:</strong> Jika data pengguna baru belum masuk ke tabel Supabase, pastikan URL & Key sudah diatur dan klik tombol <span className="text-emerald-400 font-semibold">"Sinkronkan ke Supabase"</span>.
+                </span>
+              </div>
+              <button 
+                onClick={() => setActiveTab('security')} 
+                className="text-xs text-primary underline hover:text-white flex items-center gap-1 font-semibold whitespace-nowrap"
+              >
+                Konfigurasi Supabase &rarr;
+              </button>
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-700">
@@ -623,27 +725,205 @@ const AdminPanel: React.FC = () => {
 
         {activeTab === 'security' && (
           <div className="space-y-6 animate-fade-in font-sans">
+            {/* Header Banner */}
             <div className="bg-gradient-to-r from-emerald-950/40 via-darkblue to-darkblue border border-emerald-500/30 rounded-xl p-5 sm:p-6">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
-                    <ShieldCheckIcon className="w-7 h-7" />
+                    <ServerIcon className="w-7 h-7" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold text-white">Verifikasi Keamanan Sandi & Database SQL</h3>
+                    <h3 className="text-xl font-bold text-white">Integrasi Database Supabase Cloud</h3>
                     <p className="text-gray-400 text-sm">
-                      Sistem autentikasi kini memverifikasi kata sandi secara ketat. Pengguna tidak bisa login dengan password sembarang.
+                      Kelola koneksi database Supabase, verifikasi kata sandi, dan sinkronkan data pengguna langsung ke tabel.
                     </p>
                   </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant="primary" 
+                    size="sm" 
+                    onClick={handleTestSupabase} 
+                    isLoading={supabaseTestLoading}
+                    className="whitespace-nowrap"
+                  >
+                    <ArrowPathIcon className="w-4 h-4 mr-1.5" />
+                    Test Koneksi Database
+                  </Button>
+                </div>
+              </div>
+
+              {/* Status Indicator */}
+              {supabaseTestStatus && (
+                <div className={`mt-4 p-4 rounded-xl border text-sm font-medium flex items-start gap-3 ${
+                  supabaseTestStatus.success 
+                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200' 
+                    : 'bg-red-500/15 border-red-500/40 text-red-200'
+                }`}>
+                  {supabaseTestStatus.success ? (
+                    <CheckCircleIcon className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                  ) : (
+                    <ExclamationTriangleIcon className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                  )}
+                  <div>
+                    <div className="font-bold">{supabaseTestStatus.success ? 'Koneksi Berhasil' : 'Koneksi Bermasalah'}</div>
+                    <p className="text-xs mt-0.5 opacity-90">{supabaseTestStatus.message}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 1. Supabase Connection Settings Form */}
+            <div className="bg-darkblue/80 border border-gray-700/80 rounded-xl p-5 sm:p-6">
+              <h4 className="text-base font-bold text-white mb-2 flex items-center gap-2">
+                <LinkIcon className="w-5 h-5 text-primary" />
+                1. Pengaturan Kredensial Supabase Project Anda
+              </h4>
+              <p className="text-xs text-gray-400 mb-4">
+                Dapatkan Project URL & Anon Key di <a href="https://supabase.com/dashboard" target="_blank" rel="noreferrer" className="text-primary underline font-semibold">Supabase Dashboard &gt; Project Settings &gt; API</a>.
+              </p>
+
+              <form onSubmit={handleSaveSupabaseConfig} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                      Supabase Project URL
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full bg-slate-900 border border-gray-700 rounded-lg px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-primary font-mono"
+                      placeholder="https://xyzabcdefghijklmn.supabase.co"
+                      value={supabaseUrlInput}
+                      onChange={(e) => setSupabaseUrlInput(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-300 uppercase tracking-wider mb-1.5">
+                      Supabase Anon (Public) Key
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full bg-slate-900 border border-gray-700 rounded-lg px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-primary font-mono truncate"
+                      placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                      value={supabaseKeyInput}
+                      onChange={(e) => setSupabaseKeyInput(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                  <div className="text-xs text-gray-400 flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${isCustomSupabase ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
+                    <span>Status: <strong>{isCustomSupabase ? 'Kredensial Kustom Aktif' : 'Kredensial Default'}</strong></span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isCustomSupabase && (
+                      <Button type="button" variant="ghost" size="sm" onClick={handleResetSupabaseConfig}>
+                        Reset ke Default
+                      </Button>
+                    )}
+                    <Button type="submit" variant="primary" size="sm">
+                      Simpan Kredensial & Hubungkan
+                    </Button>
+                  </div>
+                </div>
+              </form>
+            </div>
+
+            {/* 2. Synchronize Data to Supabase Table */}
+            <div className="bg-darkblue/80 border border-gray-700/80 rounded-xl p-5 sm:p-6">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                <div>
+                  <h4 className="text-base font-bold text-white flex items-center gap-2">
+                    <ArrowPathIcon className="w-5 h-5 text-emerald-400" />
+                    2. Sinkronkan Pengguna Terdaftar ke Tabel Supabase
+                  </h4>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Jika ada akun yang sebelumnya terdaftar tetapi datanya belum masuk ke tabel Supabase (<code className="text-emerald-300">auth.users</code> & <code className="text-emerald-300">public.profiles</code>), tekan tombol ini untuk memasukkan seluruh akun ke database sekarang.
+                  </p>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="md" 
+                  onClick={handleSyncUsers} 
+                  isLoading={isSyncingUsers}
+                  className="border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/10 whitespace-nowrap shadow-md shadow-emerald-950"
+                >
+                  <ArrowPathIcon className="w-5 h-5 mr-2" />
+                  Sinkronkan Pengguna Sekarang
+                </Button>
+              </div>
+
+              {syncReport && (
+                <div className="bg-slate-900 border border-gray-800 rounded-lg p-4 mt-3 text-xs">
+                  <div className="font-bold text-white mb-1.5 flex items-center gap-2">
+                    <span>Laporan Hasil Sinkronisasi:</span>
+                    <span className="text-emerald-400">{syncReport.synced} Berhasil Masuk</span>
+                    {syncReport.failed > 0 && <span className="text-red-400">• {syncReport.failed} Gagal</span>}
+                  </div>
+                  <p className="text-gray-400">Total akun diproses: {syncReport.total}</p>
+                  {syncReport.errors.length > 0 && (
+                    <div className="mt-2 text-red-300 font-mono bg-red-950/40 p-2.5 rounded border border-red-900/50 space-y-1">
+                      {syncReport.errors.map((err, i) => (
+                        <div key={i}>• {err}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 3. Explanation Why Data Might Not Enter */}
+            <div className="bg-amber-950/20 border border-amber-500/30 rounded-xl p-5">
+              <h4 className="text-base font-bold text-amber-300 mb-3 flex items-center gap-2">
+                <ExclamationTriangleIcon className="w-5 h-5 text-amber-400" />
+                Mengapa Data Pengguna Bisa Terdaftar Tapi Belum Masuk ke Tabel Supabase?
+              </h4>
+              <div className="space-y-2.5 text-xs text-gray-300 leading-relaxed">
+                <div className="flex items-start gap-2">
+                  <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center flex-shrink-0 text-[11px]">1</span>
+                  <p>
+                    <strong>URL & API Key Supabase Belum Terhubung:</strong> Jika URL Supabase masih menggunakan placeholder atau domain salah, aplikasi menyimpan akun ke penyimpanan lokal agar aplikasi tidak error saat dicoba. Pastikan Anda telah memasukkan Project URL Supabase Anda di form atas.
+                  </p>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center flex-shrink-0 text-[11px]">2</span>
+                  <p>
+                    <strong>Tabel <code className="text-amber-200">public.profiles</code> Belum Dibuat di Supabase:</strong> Di Supabase, pendaftaran akun masuk ke tabel <code className="text-amber-200">auth.users</code>. Agar data profil lengkap masuk ke tabel yang bisa dilihat di Table Editor, Anda harus menjalankan skrip SQL di bawah ini di menu <strong>SQL Editor</strong> Supabase.
+                  </p>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center flex-shrink-0 text-[11px]">3</span>
+                  <p>
+                    <strong>Opsi "Confirm email" di Supabase Masih Aktif:</strong> Di dashboard Supabase &gt; <em>Authentication &gt; Providers &gt; Email</em>, matikan opsi <em>Confirm email</em> agar pengguna langsung aktif dan terdaftar tanpa perlu konfirmasi tautan email.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* 4. Complete SQL Script Viewer with Copy Button */}
+            <div className="bg-darkblue/60 border border-gray-700 rounded-xl p-5">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+                <div>
+                  <h4 className="text-base font-bold text-white flex items-center gap-2">
+                    <CommandLineIcon className="w-5 h-5 text-primary" />
+                    4. Skrip SQL Lengkap Database Dupoin (<code className="text-xs text-primary font-mono">supabase_schema.sql</code>)
+                  </h4>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Salin skrip di bawah ini, lalu buka <strong>Supabase Dashboard &gt; SQL Editor &gt; New query &gt; Run</strong>.
+                  </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => {
-                    const sqlScript = `-- =========================================================================
+                    const fullSql = `-- =========================================================================
 -- DUPOIN PRO BROKER - SUPABASE DATABASE & AUTHENTICATION SECURITY SCHEMA
 -- =========================================================================
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- 1. TABEL PROFILES
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email TEXT UNIQUE NOT NULL,
@@ -662,19 +942,23 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_profiles_email ON public.profiles(email);
-
+-- 2. TABEL TRANSACTIONS
 CREATE TABLE IF NOT EXISTS public.transactions (
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::TEXT,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
     type TEXT NOT NULL CHECK (type IN ('DEPOSIT', 'WITHDRAWAL', 'TRANSFER')),
     amount NUMERIC(15, 2) NOT NULL,
-    date TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-    status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
+    method TEXT DEFAULT 'Bank Transfer',
+    bank_or_ewallet_name TEXT DEFAULT '',
+    account_number TEXT DEFAULT '',
+    account_holder_name TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED', 'SUCCESS')),
     notes TEXT,
+    date TIMESTAMPTZ DEFAULT NOW() NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- 3. TABEL NOTIFICATIONS
 CREATE TABLE IF NOT EXISTS public.notifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
@@ -683,6 +967,16 @@ CREATE TABLE IF NOT EXISTS public.notifications (
     date TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
+-- 4. TABEL COMPANY_BANK_INFO
+CREATE TABLE IF NOT EXISTS public.company_bank_info (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    bank_name TEXT NOT NULL,
+    account_number TEXT NOT NULL,
+    account_holder_name TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+-- 5. FUNCTION TRIGGER OTOMATIS HANDLE_NEW_USER
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -699,10 +993,12 @@ BEGIN
     )
     ON CONFLICT (id) DO UPDATE SET
         email = EXCLUDED.email,
+        full_name = COALESCE(EXCLUDED.full_name, public.profiles.full_name),
+        phone_number = COALESCE(EXCLUDED.phone_number, public.profiles.phone_number),
         updated_at = NOW();
 
     INSERT INTO public.notifications (user_id, message, date, read)
-    VALUES (NEW.id, 'Selamat datang di Dupoin Pro Trader! Akun Anda telah aktif.', NOW(), false);
+    VALUES (NEW.id, 'Selamat datang di Dupoin Pro Trader! Akun Anda telah aktif dan terverifikasi.', NOW(), false);
 
     RETURN NEW;
 END;
@@ -713,21 +1009,37 @@ CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
+-- 6. SETUP ROW LEVEL SECURITY (RLS)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.company_bank_info ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Profiles view policy" ON public.profiles;
-CREATE POLICY "Profiles view policy" ON public.profiles
-    FOR SELECT USING (auth.uid() = id OR (SELECT is_admin FROM public.profiles WHERE id = auth.uid()) = true OR auth.role() = 'anon');
-
-DROP POLICY IF EXISTS "Profiles update policy" ON public.profiles;
-CREATE POLICY "Profiles update policy" ON public.profiles
-    FOR UPDATE USING (auth.uid() = id OR (SELECT is_admin FROM public.profiles WHERE id = auth.uid()) = true OR auth.role() = 'anon');
+CREATE POLICY "Profiles view policy" ON public.profiles FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS "Profiles insert policy" ON public.profiles;
-CREATE POLICY "Profiles insert policy" ON public.profiles FOR INSERT WITH CHECK (true);`;
-                    navigator.clipboard.writeText(sqlScript);
+CREATE POLICY "Profiles insert policy" ON public.profiles FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Profiles update policy" ON public.profiles;
+CREATE POLICY "Profiles update policy" ON public.profiles FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Transactions view policy" ON public.transactions;
+CREATE POLICY "Transactions view policy" ON public.transactions FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Transactions insert policy" ON public.transactions;
+CREATE POLICY "Transactions insert policy" ON public.transactions FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Transactions update policy" ON public.transactions;
+CREATE POLICY "Transactions update policy" ON public.transactions FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Notifications policy" ON public.notifications;
+CREATE POLICY "Notifications policy" ON public.notifications FOR ALL USING (true);
+
+DROP POLICY IF EXISTS "Company bank info policy" ON public.company_bank_info;
+CREATE POLICY "Company bank info policy" ON public.company_bank_info FOR ALL USING (true);`;
+
+                    navigator.clipboard.writeText(fullSql);
                     setCopiedSql(true);
                     setTimeout(() => setCopiedSql(false), 3000);
                   }}
@@ -747,63 +1059,13 @@ CREATE POLICY "Profiles insert policy" ON public.profiles FOR INSERT WITH CHECK 
                 </button>
               </div>
 
-              {/* Status Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
-                <div className="bg-darkblue/80 border border-gray-700/80 rounded-lg p-4">
-                  <div className="text-xs text-gray-400 uppercase font-semibold mb-1 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                    Keamanan Password
-                  </div>
-                  <div className="text-sm font-bold text-white">Bcrypt Hashing Kriptografis</div>
-                  <p className="text-xs text-gray-400 mt-1">Sandi diverifikasi oleh Supabase Auth, sandi salah otomatis ditolak.</p>
+              <div className="bg-slate-950 border border-gray-800 rounded-xl p-4 overflow-hidden">
+                <div className="flex justify-between items-center mb-2 pb-2 border-b border-gray-850">
+                  <span className="text-xs font-mono text-gray-400">supabase_schema.sql (Lengkap dengan profiles, transactions, trigger & RLS)</span>
+                  <span className="text-xs text-emerald-400 font-mono">PostgreSQL 15+</span>
                 </div>
-
-                <div className="bg-darkblue/80 border border-gray-700/80 rounded-lg p-4">
-                  <div className="text-xs text-gray-400 uppercase font-semibold mb-1 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                    Bypass Password
-                  </div>
-                  <div className="text-sm font-bold text-emerald-400">Dinonaktifkan (Strict Mode)</div>
-                  <p className="text-xs text-gray-400 mt-1">Tidak ada lagi login sembarang tanpa kata sandi yang valid.</p>
-                </div>
-
-                <div className="bg-darkblue/80 border border-gray-700/80 rounded-lg p-4">
-                  <div className="text-xs text-gray-400 uppercase font-semibold mb-1 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-primary"></span>
-                    File Skema
-                  </div>
-                  <div className="text-sm font-bold text-white">/supabase_schema.sql</div>
-                  <p className="text-xs text-gray-400 mt-1">Tersimpan di root aplikasi & siap dijalankan di Supabase.</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Step-by-step instructions */}
-            <div className="bg-darkblue/60 border border-gray-700 rounded-xl p-5">
-              <h4 className="text-base font-bold text-white mb-3 flex items-center gap-2">
-                <CommandLineIcon className="w-5 h-5 text-primary" />
-                Cara Menjalankan Skrip SQL di Supabase Dashboard:
-              </h4>
-              <ol className="list-decimal list-inside space-y-2 text-sm text-gray-300">
-                <li>Buka dashboard Supabase Anda di <a href="https://supabase.com/dashboard" target="_blank" rel="noreferrer" className="text-primary underline">supabase.com/dashboard</a>.</li>
-                <li>Pilih project database Dupoin Anda.</li>
-                <li>Klik menu <strong>SQL Editor</strong> di panel sebelah kiri.</li>
-                <li>Klik tombol <strong>+ New query</strong>, tempel (paste) kode SQL di bawah ini, lalu klik tombol <strong>Run</strong>.</li>
-                <li>Buka menu <strong>Authentication &gt; Providers &gt; Email</strong>, pastikan opsi <em>Confirm email</em> dinonaktifkan (OFF) agar user bisa langsung login setelah mendaftar tanpa harus verifikasi email link.</li>
-              </ol>
-            </div>
-
-            {/* SQL Script Viewer */}
-            <div className="bg-slate-950 border border-gray-800 rounded-xl p-4 overflow-hidden">
-              <div className="flex justify-between items-center mb-3 pb-2 border-b border-gray-850">
-                <span className="text-xs font-mono text-gray-400">supabase_schema.sql</span>
-                <span className="text-xs text-emerald-400 font-mono">PostgreSQL 15+</span>
-              </div>
-              <pre className="text-xs font-mono text-emerald-300/90 overflow-x-auto p-2 bg-black/40 rounded-lg leading-relaxed max-h-96">
-{`-- 1. AKTIFKAN EXTENSION PGCRYPTO
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
--- 2. TABEL PROFILES (TERHUBUNG KE AUTH.USERS)
+                <pre className="text-xs font-mono text-emerald-300/90 overflow-x-auto p-2 bg-black/40 rounded-lg leading-relaxed max-h-80">
+{`-- 1. TABEL PROFILES (DENGAN TRIGGER OTOMATIS)
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email TEXT UNIQUE NOT NULL,
@@ -814,53 +1076,31 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     is_verified BOOLEAN DEFAULT true NOT NULL,
     is_active BOOLEAN DEFAULT true NOT NULL,
     is_admin BOOLEAN DEFAULT false NOT NULL,
-    profile_picture_url TEXT,
-    bank_name TEXT DEFAULT '',
-    bank_account_number TEXT DEFAULT '',
-    bank_account_holder TEXT DEFAULT '',
-    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
--- 3. TRIGGER SINKRONISASI OTOMATIS DARI AUTH.USERS KE PROFILES
+-- 2. TRIGGER HANDLE_NEW_USER
+-- Memastikan saat akun dibuat di Supabase Auth, otomatis masuk ke public.profiles!
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-    INSERT INTO public.profiles (
-        id, email, full_name, username, phone_number, balance, is_verified, is_active, is_admin
-    ) VALUES (
-        NEW.id,
-        NEW.email,
-        COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
-        COALESCE(NEW.raw_user_meta_data->>'username', split_part(NEW.email, '@', 1)),
-        COALESCE(NEW.raw_user_meta_data->>'phone_number', ''),
-        8000000.00, true, true,
-        CASE WHEN NEW.email ILIKE '%admin%' THEN true ELSE false END
-    )
-    ON CONFLICT (id) DO UPDATE SET
-        email = EXCLUDED.email,
-        updated_at = NOW();
-
+    INSERT INTO public.profiles (id, email, full_name, username, phone_number, balance, is_verified, is_active, is_admin)
+    VALUES (NEW.id, NEW.email, COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)), COALESCE(NEW.raw_user_meta_data->>'username', split_part(NEW.email, '@', 1)), COALESCE(NEW.raw_user_meta_data->>'phone_number', ''), 8000000.00, true, true, CASE WHEN NEW.email ILIKE '%admin%' THEN true ELSE false END)
+    ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, updated_at = NOW();
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- 4. SETUP ROW LEVEL SECURITY (RLS)
+-- 3. RLS POLICIES (MENGIZINKAN INSERT DARI FRONTEND)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Profiles view policy" ON public.profiles;
-CREATE POLICY "Profiles view policy" ON public.profiles
-    FOR SELECT USING (auth.uid() = id OR (SELECT is_admin FROM public.profiles WHERE id = auth.uid()) = true OR auth.role() = 'anon');
-
-DROP POLICY IF EXISTS "Profiles update policy" ON public.profiles;
-CREATE POLICY "Profiles update policy" ON public.profiles
-    FOR UPDATE USING (auth.uid() = id OR (SELECT is_admin FROM public.profiles WHERE id = auth.uid()) = true OR auth.role() = 'anon');`}
-              </pre>
+CREATE POLICY "Profiles insert policy" ON public.profiles FOR INSERT WITH CHECK (true);
+CREATE POLICY "Profiles view policy" ON public.profiles FOR SELECT USING (true);`}
+                </pre>
+              </div>
             </div>
           </div>
         )}
