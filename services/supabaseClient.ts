@@ -70,48 +70,75 @@ export const resetSupabaseConfig = (): void => {
   activeClient = createClient(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY);
 };
 
+export const isSupabaseConfigured = (): boolean => {
+  const config = getSupabaseConfig();
+  return config.isCustom && config.url.startsWith('https://') && !config.url.includes('jlpthxzpiqaexjpdzcsl');
+};
+
 /**
  * Test Supabase connection against the configured instance.
  */
 export const testSupabaseConnection = async (): Promise<{ success: boolean; message: string; details?: any }> => {
+  const config = getSupabaseConfig();
+
+  // If still using non-existent default URL, return clear immediate diagnostic
+  if (!config.isCustom || config.url.includes('jlpthxzpiqaexjpdzcsl')) {
+    return {
+      success: false,
+      message: 'Koneksi belum terhubung: Aplikasi masih menggunakan URL contoh bawaan yang tidak aktif. Masukkan Project URL (https://xxxx.supabase.co) dan Anon Key dari project Supabase Anda sendiri.',
+      details: { isDefaultUrl: true }
+    };
+  }
+
   try {
-    const config = getSupabaseConfig();
-    // Test auth endpoint
-    const { error: sessionError } = await activeClient.auth.getSession();
-    if (sessionError) {
-      return { success: false, message: `Koneksi Auth gagal: ${sessionError.message}` };
+    // 1. Test ping health endpoint
+    const healthTimeout = new Promise<Response>((_, reject) => 
+      setTimeout(() => reject(new Error('Koneksi timeout (>3.5s). Pastikan URL Supabase benar dan project Supabase tidak dalam status paused.')), 3500)
+    );
+
+    try {
+      const healthFetch = fetch(`${config.url}/auth/v1/health`, {
+        headers: { apikey: config.anonKey }
+      });
+      await Promise.race([healthFetch, healthTimeout]);
+    } catch (netErr: any) {
+      return {
+        success: false,
+        message: `Gagal menjangkau server Supabase (${netErr?.message || netErr}). Pastikan URL Project Anda valid.`,
+        details: { networkError: true }
+      };
     }
 
-    // Test querying profiles table (with short timeout)
+    // 2. Test querying profiles table
     const timeoutPromise = new Promise<{ data: any; error: any }>((_, reject) => 
-      setTimeout(() => reject(new Error('Koneksi timeout (>3s). Periksa apakah URL Supabase sudah benar.')), 3500)
+      setTimeout(() => reject(new Error('Koneksi timeout saat query tabel')), 3500)
     );
     const queryPromise = activeClient.from('profiles').select('id').limit(1);
 
     const { error: queryError } = await Promise.race([queryPromise, timeoutPromise]) as any;
 
     if (queryError) {
-      if (queryError.code === '42P01' || queryError.message?.includes('does not exist')) {
+      if (queryError.code === '42P01' || queryError.message?.toLowerCase().includes('does not exist')) {
         return {
           success: true,
-          message: 'Terhubung ke Supabase! Catatan: Tabel "public.profiles" belum dibuat. Jalankan skrip supabase_schema.sql di SQL Editor Supabase.',
+          message: 'Berhasil terhubung ke Supabase! Namun tabel "public.profiles" belum dibuat. Buka SQL Editor di dashboard Supabase lalu jalankan skrip supabase_schema.sql.',
           details: { tableMissing: true }
         };
       }
       return { 
         success: true, 
-        message: `Terhubung ke Supabase Auth! (Tabel profiles respon: ${queryError.message})` 
+        message: `Terhubung ke Supabase! Respon tabel: ${queryError.message}` 
       };
     }
 
     return { 
       success: true, 
-      message: `Berhasil terhubung ke Supabase (${config.url})! Database dan tabel profiles siap digunakan.` 
+      message: `Sempurna! Terhubung ke Supabase (${config.url}). Database dan tabel profiles siap digunakan secara live.` 
     };
   } catch (err: any) {
     return { 
       success: false, 
-      message: `Gagal terhubung: ${err?.message || 'Host tidak dapat dijangkau. Pastikan URL dan API Key benar.'}` 
+      message: `Gagal terhubung: ${err?.message || 'Host tidak dapat dijangkau. Periksa URL dan API Key.'}` 
     };
   }
 };

@@ -1,5 +1,5 @@
 import { User, UserProfileUpdate } from '../types';
-import { supabase, getSupabaseConfig, testSupabaseConnection } from './supabaseClient';
+import { supabase, getSupabaseConfig, testSupabaseConnection, isSupabaseConfigured } from './supabaseClient';
 
 const DEACTIVATED_USERS_KEY = 'dupoin_deactivated_user_ids';
 
@@ -109,64 +109,68 @@ export const register = async (userData: Omit<User, 'id' | 'username' | 'isAdmin
     return { user: null, error: 'Email sudah terdaftar. Silakan gunakan email lain atau masuk dengan kata sandi Anda.' };
   }
 
-  // 1. Coba daftarkan langsung ke database Supabase
+  // 1. Coba daftarkan langsung ke database Supabase jika sudah dikonfigurasi
   let createdSupabaseUser: User | null = null;
   let supabaseWarning: string | null = null;
 
-  try {
-    const timeoutPromise = new Promise<{ data: any; error: any }>((_, reject) => 
-      setTimeout(() => reject(new Error('Koneksi Supabase timeout (>3.5s). Pastikan Project URL Supabase aktif & benar.')), 3500)
-    );
-    const signUpPromise = supabase.auth.signUp({
-      email: cleanEmail,
-      password: cleanPassword,
-      options: {
-        data: {
+  if (isSupabaseConfigured()) {
+    try {
+      const timeoutPromise = new Promise<{ data: any; error: any }>((_, reject) => 
+        setTimeout(() => reject(new Error('Koneksi Supabase timeout (>4s). Pastikan Project URL Supabase aktif & benar.')), 4000)
+      );
+      const signUpPromise = supabase.auth.signUp({
+        email: cleanEmail,
+        password: cleanPassword,
+        options: {
+          data: {
+            full_name: cleanFullName,
+            username: cleanEmail.split('@')[0],
+            phone_number: userData.phoneNumber || '',
+          }
+        }
+      });
+
+      const { data: authData, error: authError } = await Promise.race([signUpPromise, timeoutPromise]) as any;
+
+      if (authError) {
+        if (authError.message?.toLowerCase().includes('already registered')) {
+          return { user: null, error: 'Email ini sudah terdaftar di database Supabase.' };
+        }
+        supabaseWarning = `Koneksi Supabase Auth: ${authError.message}`;
+      } else if (authData?.user) {
+        // Masukkan profil langsung ke public.profiles
+        const profileRow = {
+          id: authData.user.id,
+          email: cleanEmail,
           full_name: cleanFullName,
           username: cleanEmail.split('@')[0],
           phone_number: userData.phoneNumber || '',
+          balance: 8000000,
+          is_verified: true,
+          is_active: true,
+          is_admin: false,
+        };
+
+        const { error: profileError } = await supabase.from('profiles').upsert(profileRow);
+        if (profileError) {
+          supabaseWarning = `User berhasil masuk ke Supabase Auth, namun baris public.profiles gagal: ${profileError.message}. Pastikan skrip supabase_schema.sql telah dijalankan di SQL Editor Supabase.`;
         }
+
+        // Notifikasi selamat datang otomatis
+        await supabase.from('notifications').insert([{
+          user_id: authData.user.id,
+          message: 'Selamat datang di Dupoin Pro Trader! Akun Anda telah aktif dan terverifikasi di Supabase.',
+          date: new Date().toISOString(),
+          read: false
+        }]).catch(() => {});
+
+        createdSupabaseUser = mapProfileToUser(profileRow, authData.user);
       }
-    });
-
-    const { data: authData, error: authError } = await Promise.race([signUpPromise, timeoutPromise]) as any;
-
-    if (authError) {
-      if (authError.message?.toLowerCase().includes('already registered')) {
-        return { user: null, error: 'Email ini sudah terdaftar di database Supabase.' };
-      }
-      supabaseWarning = `Koneksi Supabase Auth: ${authError.message}`;
-    } else if (authData?.user) {
-      // Masukkan profil langsung ke public.profiles
-      const profileRow = {
-        id: authData.user.id,
-        email: cleanEmail,
-        full_name: cleanFullName,
-        username: cleanEmail.split('@')[0],
-        phone_number: userData.phoneNumber || '',
-        balance: 8000000,
-        is_verified: true,
-        is_active: true,
-        is_admin: false,
-      };
-
-      const { error: profileError } = await supabase.from('profiles').upsert(profileRow);
-      if (profileError) {
-        supabaseWarning = `User masuk ke Supabase Auth, tetapi baris profiles gagal: ${profileError.message}. Pastikan skrip supabase_schema.sql telah dijalankan di SQL Editor Supabase.`;
-      }
-
-      // Notifikasi selamat datang otomatis
-      await supabase.from('notifications').insert([{
-        user_id: authData.user.id,
-        message: 'Selamat datang di Dupoin Pro Trader! Akun Anda telah aktif dan terverifikasi.',
-        date: new Date().toISOString(),
-        read: false
-      }]).catch(() => {});
-
-      createdSupabaseUser = mapProfileToUser(profileRow, authData.user);
+    } catch (e: any) {
+      supabaseWarning = `Supabase tidak dapat dijangkau (${e?.message || e}). Periksa koneksi project Supabase Anda.`;
     }
-  } catch (e: any) {
-    supabaseWarning = `Supabase tidak dapat dijangkau (${e?.message || e}). URL Supabase belum dihubungkan di Pengaturan Admin.`;
+  } else {
+    supabaseWarning = 'Aplikasi belum terhubung ke database Supabase Anda. Klik tombol "Hubungkan Supabase" di bagian atas untuk menghubungkan Project URL & Anon Key Anda.';
   }
 
   if (createdSupabaseUser) {
