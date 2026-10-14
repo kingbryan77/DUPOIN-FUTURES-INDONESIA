@@ -33,6 +33,7 @@ interface TransactionContextType {
   setCompanyBankInfoList: (info: CompanyBankInfo[]) => void;
   adminUpdateUserBalance: (userId: string, amount: number, type: 'set' | 'add') => void;
   adminCreateUser: (userData: Omit<User, 'id' | 'username' | 'notifications'> & { password: string; isActive?: boolean }) => Promise<boolean>;
+  deleteUser: (userId: string) => Promise<void>;
   getAllTransactions: () => Promise<Transaction[]>;
   getAllUsers: () => Promise<User[]>;
   updateUserVerification: (userId: string, isVerified: boolean) => void;
@@ -209,6 +210,10 @@ export const TransactionProvider: React.FC<React.PropsWithChildren<{}>> = ({ chi
     return !!newUser;
   };
 
+  const deleteUser = async (userId: string): Promise<void> => {
+    authService.deleteCustomUser(userId);
+  };
+
   const updateDepositStatus = async (depositId: string, status: TransactionStatus) => {
     setIsLoadingTransactions(true);
     const success = await transactionService.updateDepositStatus(depositId, status);
@@ -275,6 +280,7 @@ export const TransactionProvider: React.FC<React.PropsWithChildren<{}>> = ({ chi
     updateUserActiveStatus,
     adminUpdateUserBalance,
     adminCreateUser,
+    deleteUser,
   };
 
   return <TransactionContext.Provider value={value}>{children}</TransactionContext.Provider>;

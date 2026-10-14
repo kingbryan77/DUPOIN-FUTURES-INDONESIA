@@ -36,7 +36,8 @@ const AdminPanel: React.FC = () => {
     companyBankInfoList,
     setCompanyBankInfoList,
     adminUpdateUserBalance,
-    adminCreateUser
+    adminCreateUser,
+    deleteUser
   } = useTransactions();
 
   const [activeTab, setActiveTab] = useState<'users' | 'transactions' | 'settings' | 'security'>('users');
@@ -135,24 +136,56 @@ const AdminPanel: React.FC = () => {
     }
   };
 
+  const handleDeleteUser = async (u: User) => {
+    if (u.id === user.id) {
+      setUserActionMessage({ text: 'Tidak dapat menghapus akun Anda sendiri.', type: 'error' });
+      setTimeout(() => setUserActionMessage(null), 3000);
+      return;
+    }
+    if (confirm(`Apakah Anda yakin ingin menghapus pengguna "${u.fullName}" (${u.email})?`)) {
+      try {
+        await deleteUser(u.id);
+        setUserActionMessage({
+          text: `Pengguna "${u.fullName}" berhasil dihapus.`,
+          type: 'success'
+        });
+        setTimeout(() => setUserActionMessage(null), 4000);
+        await loadData();
+      } catch {
+        setUserActionMessage({ text: 'Gagal menghapus pengguna.', type: 'error' });
+        setTimeout(() => setUserActionMessage(null), 4000);
+      }
+    }
+  };
+
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateError(null);
     setCreateLoading(true);
 
-    if (!createData.fullName || !createData.email || !createData.password) {
-        setCreateError("Name, Email, and Password are required.");
+    const name = createData.fullName.trim();
+    const mail = createData.email.trim();
+    const pass = createData.password.trim();
+
+    if (!name || !mail || !pass) {
+        setCreateError("Nama Lengkap, Email, dan Password wajib diisi.");
+        setCreateLoading(false);
+        return;
+    }
+
+    if (pass.length < 6) {
+        setCreateError("Password minimal 6 karakter.");
         setCreateLoading(false);
         return;
     }
 
     try {
         const success = await adminCreateUser({
-            fullName: createData.fullName,
-            email: createData.email,
-            phoneNumber: createData.phoneNumber,
-            password: createData.password,
-            balance: parseFloat(createData.balance) || 0,
+            fullName: name,
+            email: mail,
+            phoneNumber: createData.phoneNumber.trim(),
+            password: pass,
+            balance: parseFloat(createData.balance) || 8000000,
             isAdmin: createData.isAdmin,
             isVerified: createData.isVerified,
             isActive: createData.isActive
@@ -171,17 +204,16 @@ const AdminPanel: React.FC = () => {
                 isActive: true
             });
             setUserActionMessage({
-                text: `User baru berhasil dibuat. Status Akun: ${createData.isActive ? 'Aktif' : 'Nonaktif'}.`,
+                text: `Pengguna baru "${name}" (${mail}) berhasil dibuat & disimpan! Status: ${createData.isActive ? 'Aktif' : 'Nonaktif'}.`,
                 type: 'success'
             });
-            setTimeout(() => setUserActionMessage(null), 4000);
-            // Re-load users after successful creation
+            setTimeout(() => setUserActionMessage(null), 5000);
             await loadData();
         } else {
-            setCreateError("Failed to create user. Email might be taken or database connection issue.");
+            setCreateError("Gagal membuat pengguna baru. Silakan periksa kembali data Anda.");
         }
-    } catch (err) {
-        setCreateError("Error during user creation.");
+    } catch (err: any) {
+        setCreateError(err?.message || "Terjadi kesalahan saat membuat pengguna.");
     } finally {
         setCreateLoading(false);
     }
@@ -414,6 +446,15 @@ const AdminPanel: React.FC = () => {
                               >
                                   Aktifkan
                               </Button>
+                            )}
+                            {u.id !== user.id && (
+                              <button
+                                  onClick={() => handleDeleteUser(u)}
+                                  className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-all cursor-pointer"
+                                  title="Hapus Pengguna"
+                              >
+                                  <TrashIcon className="w-4 h-4" />
+                              </button>
                             )}
                         </div>
                       </td>
