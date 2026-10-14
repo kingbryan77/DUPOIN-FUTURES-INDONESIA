@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { User } from '../../types';
-import { EnvelopeIcon, LockClosedIcon, PhoneIcon, UserIcon, CheckCircleIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { EnvelopeIcon, LockClosedIcon, PhoneIcon, UserIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import Input from '../common/Input';
 import Button from '../common/Button';
 import DupoinLogo from '../common/DupoinLogo';
@@ -17,7 +17,7 @@ const RegisterForm: React.FC = () => {
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isSuccess, setIsSuccess] = useState(false);
 
-  const { register, isLoading, error, registrationNotice } = useAuth();
+  const { register, isLoading, error } = useAuth();
   const navigate = useNavigate();
 
   const validate = () => {
@@ -60,21 +60,6 @@ const RegisterForm: React.FC = () => {
            <p className="text-sm leading-relaxed text-gray-300">
              Akun Anda telah aktif dan terverifikasi. Silakan masuk untuk mulai bertransaksi.
            </p>
-
-           {registrationNotice ? (
-             <div className="mt-5 p-3.5 bg-amber-500/15 border border-amber-500/40 rounded-2xl text-left text-xs text-amber-200">
-               <div className="font-bold flex items-center gap-1.5 text-amber-400 mb-1">
-                 <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
-                 Catatan Database Supabase:
-               </div>
-               <p className="leading-relaxed">{registrationNotice}</p>
-             </div>
-           ) : (
-             <div className="mt-5 p-3 bg-emerald-500/15 border border-emerald-500/40 rounded-2xl text-left text-xs text-emerald-200 flex items-center gap-2">
-               <CheckCircleIcon className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-               <span>Tersimpan di Supabase Auth & Tabel Profiles.</span>
-             </div>
-           )}
         </div>
         <Link to="/">
           <Button fullWidth size="lg">Masuk Sekarang</Button>

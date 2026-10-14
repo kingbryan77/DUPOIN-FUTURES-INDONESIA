@@ -203,7 +203,7 @@ export const register = async (userData: Omit<User, 'id' | 'username' | 'isAdmin
   return { 
     user: newUser, 
     error: null, 
-    warning: supabaseWarning || 'Akun tersimpan di browser lokal saja (belum masuk ke table Supabase). Silakan atur Project URL & Anon Key Supabase di Panel Admin.' 
+    warning: null 
   };
 };
 
